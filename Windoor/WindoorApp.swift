@@ -21,9 +21,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem?
     var settingsWindow: NSWindow? // ウィンドウの参照を保持
     
-    func applicationDidFinishLaunching(_ notification: Notification) {
+    func applicationWillFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
-        
+    }
+    
+    func applicationDidFinishLaunching(_ notification: Notification) {
         AccessibilityManager.shared.startMonitoring()
         
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -48,11 +50,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let settingsTitle = LocalizationManager.shared.text("menuSettings", language: lang)
         let settingsItem = NSMenuItem(title: settingsTitle, action: #selector(openSettings), keyEquivalent: ",")
         menu.addItem(settingsItem)
+
+        let restartTitle = LocalizationManager.shared.text("menuRestart", language: lang)
+        let restartItem = NSMenuItem(title: restartTitle, action: #selector(restartApp), keyEquivalent: "r")
+        if let image = NSImage(systemSymbolName: "arrow.clockwise", accessibilityDescription: nil) {
+            image.isTemplate = true
+            restartItem.image = image
+        }
+        menu.addItem(restartItem)
         
         menu.addItem(NSMenuItem.separator())
         
         let quitTitle = LocalizationManager.shared.text("menuQuit", language: lang)
         let quitItem = NSMenuItem(title: quitTitle, action: #selector(terminateApp), keyEquivalent: "q")
+        if let image = NSImage(systemSymbolName: "power", accessibilityDescription: nil) {
+            image.isTemplate = true
+            quitItem.image = image
+        }
         menu.addItem(quitItem)
         
         statusItem?.menu = menu
@@ -91,5 +105,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     @objc func terminateApp() {
         NSApplication.shared.terminate(nil)
+    }
+
+    @objc func restartApp() {
+        AppRestartManager.restart()
     }
 }

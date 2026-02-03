@@ -31,6 +31,9 @@ struct SettingsView: View {
     private var footerArea: some View {
         HStack {
             Spacer()
+            Button(action: restartApp) {
+                Text(t("restart"))
+            }
             Button(action: { showQuitAlert = true }) {
                 Text(t("quit"))
                     .foregroundColor(.red)
@@ -60,6 +63,10 @@ struct SettingsView: View {
         for window in NSApp.windows {
             window.title = t("windowTitle")
         }
+    }
+
+    private func restartApp() {
+        AppRestartManager.restart()
     }
 }
 

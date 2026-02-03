@@ -62,6 +62,7 @@ class LocalizationManager {
             "longPressDuration": "長押し確定の時間",
             "longPressDesc": "「修飾キーのみ」がオンの場合、キーを押し続けると確定します。",
             "launchAtLogin": "ログイン時に自動実行",
+            "restart": "再起動",
             "quit": "終了",
             "quitAlertTitle": "Windoorを終了",
             "quitAlertMessage": "アプリを終了してもよろしいですか？\nウィンドウ操作機能が停止します。",
@@ -74,6 +75,7 @@ class LocalizationManager {
             "rightClick": "右クリック",
             "centerClick": "ホイール(中)",
             "menuSettings": "設定...",
+            "menuRestart": "Windoorを再起動",
             "menuQuit": "Windoorを終了"
         ],
         .english: [
@@ -90,6 +92,7 @@ class LocalizationManager {
             "longPressDuration": "Long Press Duration",
             "longPressDesc": "Hold key to confirm when 'Modifier Only' is on.",
             "launchAtLogin": "Launch at Login",
+            "restart": "Restart",
             "quit": "Quit",
             "quitAlertTitle": "Quit Windoor",
             "quitAlertMessage": "Are you sure you want to quit?\nWindow management features will stop.",
@@ -102,6 +105,7 @@ class LocalizationManager {
             "rightClick": "Right Click",
             "centerClick": "Middle Click",
             "menuSettings": "Settings...",
+            "menuRestart": "Restart Windoor",
             "menuQuit": "Quit Windoor"
         ],
         .german: [
@@ -118,6 +122,7 @@ class LocalizationManager {
             "longPressDuration": "Dauer für langes Drücken",
             "longPressDesc": "Taste gedrückt halten zum Bestätigen.",
             "launchAtLogin": "Beim Anmelden starten",
+            "restart": "Neustart",
             "quit": "Beenden",
             "quitAlertTitle": "Windoor beenden",
             "quitAlertMessage": "Möchten Sie wirklich beenden?",
@@ -130,6 +135,7 @@ class LocalizationManager {
             "rightClick": "Rechtsklick",
             "centerClick": "Mittelklick",
             "menuSettings": "Einstellungen...",
+            "menuRestart": "Windoor neu starten",
             "menuQuit": "Windoor beenden"
         ],
         .french: [
@@ -146,6 +152,7 @@ class LocalizationManager {
             "longPressDuration": "Durée appui long",
             "longPressDesc": "Maintenez pour confirmer si 'Modif. uniquement' est actif.",
             "launchAtLogin": "Lancer à la connexion",
+            "restart": "Redémarrer",
             "quit": "Quitter",
             "quitAlertTitle": "Quitter Windoor",
             "quitAlertMessage": "Voulez-vous vraiment quitter ?",
@@ -158,6 +165,7 @@ class LocalizationManager {
             "rightClick": "Clic droit",
             "centerClick": "Clic milieu",
             "menuSettings": "Paramètres...",
+            "menuRestart": "Redémarrer Windoor",
             "menuQuit": "Quitter Windoor"
         ],
         .spanish: [
@@ -174,6 +182,7 @@ class LocalizationManager {
             "longPressDuration": "Duración pulsación larga",
             "longPressDesc": "Mantenga pulsado para confirmar.",
             "launchAtLogin": "Ejecutar al iniciar sesión",
+            "restart": "Reiniciar",
             "quit": "Salir",
             "quitAlertTitle": "Salir de Windoor",
             "quitAlertMessage": "¿Seguro que quieres salir?",
@@ -186,6 +195,7 @@ class LocalizationManager {
             "rightClick": "Clic derecho",
             "centerClick": "Clic central",
             "menuSettings": "Ajustes...",
+            "menuRestart": "Reiniciar Windoor",
             "menuQuit": "Salir de Windoor"
         ],
         .korean: [
@@ -202,6 +212,7 @@ class LocalizationManager {
             "longPressDuration": "길게 누르기 시간",
             "longPressDesc": "'수식 키만 사용'이 켜져 있으면 길게 눌러 확정합니다.",
             "launchAtLogin": "로그인 시 자동 실행",
+            "restart": "재시작",
             "quit": "종료",
             "quitAlertTitle": "Windoor 종료",
             "quitAlertMessage": "정말 종료하시겠습니까?",
@@ -214,6 +225,7 @@ class LocalizationManager {
             "rightClick": "우클릭",
             "centerClick": "휠 클릭",
             "menuSettings": "설정...",
+            "menuRestart": "Windoor 재시작",
             "menuQuit": "Windoor 종료"
         ],
         .chineseSimplified: [
@@ -230,6 +242,7 @@ class LocalizationManager {
             "longPressDuration": "长按确认时间",
             "longPressDesc": "开启“仅修饰键”时，长按以确认。",
             "launchAtLogin": "登录时自动启动",
+            "restart": "重新启动",
             "quit": "退出",
             "quitAlertTitle": "退出 Windoor",
             "quitAlertMessage": "确定要退出吗？",
@@ -242,6 +255,7 @@ class LocalizationManager {
             "rightClick": "右键",
             "centerClick": "中键",
             "menuSettings": "设置...",
+            "menuRestart": "重新启动 Windoor",
             "menuQuit": "退出 Windoor"
         ],
         .chineseTraditional: [
@@ -258,6 +272,7 @@ class LocalizationManager {
             "longPressDuration": "長按確認時間",
             "longPressDesc": "開啟「僅修飾鍵」時，長按以確認。",
             "launchAtLogin": "登入時自動啟動",
+            "restart": "重新啟動",
             "quit": "結束",
             "quitAlertTitle": "結束 Windoor",
             "quitAlertMessage": "確定要結束嗎？",
@@ -270,6 +285,7 @@ class LocalizationManager {
             "rightClick": "右鍵",
             "centerClick": "中鍵",
             "menuSettings": "設定...",
+            "menuRestart": "重新啟動 Windoor",
             "menuQuit": "結束 Windoor"
         ],
         .portugueseBrazil: [
@@ -286,6 +302,7 @@ class LocalizationManager {
             "longPressDuration": "Duração do toque longo",
             "longPressDesc": "Segure para confirmar quando 'Apenas Modificador' estiver ativado.",
             "launchAtLogin": "Iniciar ao fazer login",
+            "restart": "Reiniciar",
             "quit": "Sair",
             "quitAlertTitle": "Sair do Windoor",
             "quitAlertMessage": "Tem certeza que deseja sair?",
@@ -298,6 +315,7 @@ class LocalizationManager {
             "rightClick": "Clique Direito",
             "centerClick": "Clique do Meio",
             "menuSettings": "Configurações...",
+            "menuRestart": "Reiniciar Windoor",
             "menuQuit": "Sair do Windoor"
         ],
         .russian: [
@@ -314,6 +332,7 @@ class LocalizationManager {
             "longPressDuration": "Длительность нажатия",
             "longPressDesc": "Удерживайте клавишу для подтверждения.",
             "launchAtLogin": "Запускать при входе",
+            "restart": "Перезапуск",
             "quit": "Выход",
             "quitAlertTitle": "Выйти из Windoor",
             "quitAlertMessage": "Вы уверены, что хотите выйти?",
@@ -326,6 +345,7 @@ class LocalizationManager {
             "rightClick": "Правый клик",
             "centerClick": "Средний клик",
             "menuSettings": "Настройки...",
+            "menuRestart": "Перезапустить Windoor",
             "menuQuit": "Выйти из Windoor"
         ]
     ]
