@@ -16,7 +16,7 @@ struct SettingsView: View {
                 SettingsContent(settings: settings)
             }
             // ここを旧シグネチャに戻す
-            .onChange(of: settings.language) { _ in
+            .onChange(of: settings.language) {
                 updateWindowTitle()
             }
             .onAppear {

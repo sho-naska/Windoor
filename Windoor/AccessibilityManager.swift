@@ -1,6 +1,9 @@
 import Cocoa
 import ApplicationServices
 
+private let axMinSizeAttribute: CFString = "AXMinSize" as CFString
+private let axMaxSizeAttribute: CFString = "AXMaxSize" as CFString
+
 class AccessibilityManager {
     static let shared = AccessibilityManager()
     
@@ -18,6 +21,10 @@ class AccessibilityManager {
     private var startDragLocation: CGPoint?
     private var startWindowPosition: CGPoint?
     private var startWindowSize: CGSize?
+    private var activeMode: InteractionMode = .none
+    private var activeMouseButton: MouseButton?
+    private var minWindowSize: CGSize?
+    private var maxWindowSize: CGSize?
     
     // パフォーマンス対策
     private var lastUpdateTime: TimeInterval = 0
@@ -37,7 +44,7 @@ class AccessibilityManager {
                         (1 << CGEventType.otherMouseUp.rawValue)
 
         guard let eventTap = CGEvent.tapCreate(
-            tap: .cghidEventTap,
+            tap: .cgSessionEventTap,
             place: .headInsertEventTap,
             options: .defaultTap,
             eventsOfInterest: CGEventMask(eventMask),
@@ -85,6 +92,14 @@ class AccessibilityManager {
     }
 
     private func handleKeyboard(event: CGEvent, type: CGEventType) -> Unmanaged<CGEvent>? {
+        if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            if let keyboardEventTap = keyboardEventTap {
+                CGEvent.tapEnable(tap: keyboardEventTap, enable: true)
+            }
+            pressedKeyCodes.removeAll()
+            return nil
+        }
+        
         // 押下状態の追跡（Event Tap でイベントを握りつぶす場合でも判定できるようにする）
         let keyCode = Int(event.getIntegerValueField(.keyboardEventKeycode))
 
@@ -122,6 +137,14 @@ class AccessibilityManager {
     }
 
     private func handle(event: CGEvent, type: CGEventType) -> Unmanaged<CGEvent>? {
+        if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            if let eventTap = eventTap {
+                CGEvent.tapEnable(tap: eventTap, enable: true)
+            }
+            endAction()
+            return nil
+        }
+        
         guard let settings = settings,
               !settings.isRecording,
               !settings.hasConflict
@@ -129,13 +152,12 @@ class AccessibilityManager {
             return Unmanaged.passUnretained(event)
         }
 
-        let flags = event.flags
-        
-        let isMoveActive = shouldActivate(setting: settings.moveSetting, flags: flags, isEnabled: settings.isMoveEnabled, eventType: type, event: event)
-        let isResizeActive = shouldActivate(setting: settings.resizeSetting, flags: flags, isEnabled: settings.isResizeEnabled, eventType: type, event: event)
-
         // マウスダウン処理
         if isMouseDown(type) {
+            let flags = event.flags
+            let isMoveActive = shouldActivate(setting: settings.moveSetting, flags: flags, isEnabled: settings.isMoveEnabled, eventType: type)
+            let isResizeActive = shouldActivate(setting: settings.resizeSetting, flags: flags, isEnabled: settings.isResizeEnabled, eventType: type)
+            
             if isMoveActive || isResizeActive {
                 let location = event.location
                 if let element = getElementAtLocation(location) {
@@ -151,12 +173,17 @@ class AccessibilityManager {
                     self.startDragLocation = location
                     self.startWindowPosition = getPosition(element)
                     self.startWindowSize = getSize(element)
+                    self.activeMode = isMoveActive ? .move : .resize
+                    self.activeMouseButton = isMoveActive ? settings.moveSetting.mouseButton : settings.resizeSetting.mouseButton
+                    self.minWindowSize = isResizeActive ? getMinSize(element) : nil
+                    self.maxWindowSize = isResizeActive ? getMaxSize(element) : nil
                     self.lastUpdateTime = 0
                     
                     if let startPos = startWindowPosition, let startSize = startWindowSize {
                         let currentFrame = CGRect(origin: startPos, size: startSize)
-                        let mode: InteractionMode = isMoveActive ? .move : .resize
-                        VisualEffectManager.shared.showEffect(frame: currentFrame, mode: mode)
+                        VisualEffectManager.shared.showEffect(frame: currentFrame, mode: activeMode)
+                    } else {
+                        endAction()
                     }
                     
                     return nil
@@ -169,6 +196,10 @@ class AccessibilityManager {
             if let element = targetedElement, let startLocation = startDragLocation,
                let startPos = startWindowPosition, let startSize = startWindowSize {
                 
+                guard activeMode != .none, dragEventMatchesActiveButton(type) else {
+                    return Unmanaged.passUnretained(event)
+                }
+                
                 // スロットリング
                 let currentTime = Date().timeIntervalSince1970
                 if currentTime - lastUpdateTime < updateInterval {
@@ -180,31 +211,22 @@ class AccessibilityManager {
                 let deltaX = location.x - startLocation.x
                 let deltaY = location.y - startLocation.y
                 
-                // 移動処理
-                if shouldActivate(setting: settings.moveSetting, flags: flags, isEnabled: settings.isMoveEnabled, eventType: type, event: event, checkButtonOnly: true) {
+                switch activeMode {
+                case .move:
                     let newPoint = CGPoint(x: startPos.x + deltaX, y: startPos.y + deltaY)
-                    setPosition(element, position: newPoint)
-                    
-                    // セット後に実際のウィンドウ位置を取得して枠線に反映（ズレ防止）
-                    if let actualPos = getPosition(element), let actualSize = getSize(element) {
-                        let actualRect = CGRect(origin: actualPos, size: actualSize)
-                        VisualEffectManager.shared.updateFrame(actualRect)
+                    if setPosition(element, position: newPoint) {
+                        let newFrame = CGRect(origin: newPoint, size: startSize)
+                        VisualEffectManager.shared.updateFrame(newFrame)
                     }
-                }
-                // リサイズ処理
-                else if shouldActivate(setting: settings.resizeSetting, flags: flags, isEnabled: settings.isResizeEnabled, eventType: type, event: event, checkButtonOnly: true) {
-                    let newSize = CGSize(width: startSize.width + deltaX, height: startSize.height + deltaY)
-                    setSize(element, size: newSize)
-                    
-                    // セット後に実際のウィンドウサイズを取得して枠線に反映（ズレ防止）
-                    // ウィンドウが最小/最大サイズ制限で止まった場合、ここでの取得値も止まるため枠線も止まる
-                    if let actualPos = getPosition(element), let actualSize = getSize(element) {
-                        let actualRect = CGRect(origin: actualPos, size: actualSize)
-                        VisualEffectManager.shared.updateFrame(actualRect)
+                case .resize:
+                    let rawSize = CGSize(width: startSize.width + deltaX, height: startSize.height + deltaY)
+                    let newSize = clampSize(rawSize)
+                    if setSize(element, size: newSize) {
+                        let newFrame = CGRect(origin: startPos, size: newSize)
+                        VisualEffectManager.shared.updateFrame(newFrame)
                     }
-                } else {
-                    endAction()
-                    return Unmanaged.passUnretained(event)
+                default:
+                    break
                 }
                 
                 return nil
@@ -213,7 +235,7 @@ class AccessibilityManager {
         
         // マウスアップ処理
         else if isMouseUp(type) {
-            if targetedElement != nil {
+            if targetedElement != nil && mouseUpMatchesActiveButton(type) {
                 endAction()
                 return nil
             }
@@ -227,10 +249,14 @@ class AccessibilityManager {
         startDragLocation = nil
         startWindowPosition = nil
         startWindowSize = nil
+        activeMode = .none
+        activeMouseButton = nil
+        minWindowSize = nil
+        maxWindowSize = nil
         VisualEffectManager.shared.hideEffect()
     }
     
-    private func shouldActivate(setting: ShortcutSetting, flags: CGEventFlags, isEnabled: Bool, eventType: CGEventType, event: CGEvent, checkButtonOnly: Bool = false) -> Bool {
+    private func shouldActivate(setting: ShortcutSetting, flags: CGEventFlags, isEnabled: Bool, eventType: CGEventType) -> Bool {
         guard isEnabled else { return false }
         
         let buttonMatches: Bool
@@ -313,18 +339,20 @@ class AccessibilityManager {
         return nil
     }
     
-    private func setPosition(_ element: AXUIElement, position: CGPoint) {
+    private func setPosition(_ element: AXUIElement, position: CGPoint) -> Bool {
         var position = position
         if let value = AXValueCreate(.cgPoint, &position) {
-            AXUIElementSetAttributeValue(element, kAXPositionAttribute as CFString, value)
+            return AXUIElementSetAttributeValue(element, kAXPositionAttribute as CFString, value) == .success
         }
+        return false
     }
     
-    private func setSize(_ element: AXUIElement, size: CGSize) {
+    private func setSize(_ element: AXUIElement, size: CGSize) -> Bool {
         var size = size
         if let value = AXValueCreate(.cgSize, &size) {
-            AXUIElementSetAttributeValue(element, kAXSizeAttribute as CFString, value)
+            return AXUIElementSetAttributeValue(element, kAXSizeAttribute as CFString, value) == .success
         }
+        return false
     }
     
     private func isResizable(_ element: AXUIElement) -> Bool {
@@ -332,4 +360,69 @@ class AccessibilityManager {
         AXUIElementIsAttributeSettable(element, kAXSizeAttribute as CFString, &writable)
         return writable.boolValue
     }
+
+    private func dragEventMatchesActiveButton(_ type: CGEventType) -> Bool {
+        guard let button = activeMouseButton else { return false }
+        switch button {
+        case .left:
+            return type == .leftMouseDragged
+        case .right:
+            return type == .rightMouseDragged
+        case .center:
+            return type == .otherMouseDragged
+        }
+    }
+
+    private func mouseUpMatchesActiveButton(_ type: CGEventType) -> Bool {
+        guard let button = activeMouseButton else { return true }
+        switch button {
+        case .left:
+            return type == .leftMouseUp
+        case .right:
+            return type == .rightMouseUp
+        case .center:
+            return type == .otherMouseUp
+        }
+    }
+
+    private func getMinSize(_ element: AXUIElement) -> CGSize? {
+        var value: AnyObject?
+        let result = AXUIElementCopyAttributeValue(element, axMinSizeAttribute, &value)
+        guard result == .success, let value = value else { return nil }
+        var size = CGSize.zero
+        if AXValueGetValue(value as! AXValue, .cgSize, &size) {
+            if size.width <= 0 || size.height <= 0 { return nil }
+            return size
+        }
+        return nil
+    }
+
+    private func getMaxSize(_ element: AXUIElement) -> CGSize? {
+        var value: AnyObject?
+        let result = AXUIElementCopyAttributeValue(element, axMaxSizeAttribute, &value)
+        guard result == .success, let value = value else { return nil }
+        var size = CGSize.zero
+        if AXValueGetValue(value as! AXValue, .cgSize, &size) {
+            if size.width <= 0 || size.height <= 0 { return nil }
+            return size
+        }
+        return nil
+    }
+
+    private func clampSize(_ size: CGSize) -> CGSize {
+        var clamped = size
+        if let minSize = minWindowSize {
+            clamped.width = max(clamped.width, minSize.width)
+            clamped.height = max(clamped.height, minSize.height)
+        } else {
+            clamped.width = max(clamped.width, 1)
+            clamped.height = max(clamped.height, 1)
+        }
+        if let maxSize = maxWindowSize {
+            clamped.width = min(clamped.width, maxSize.width)
+            clamped.height = min(clamped.height, maxSize.height)
+        }
+        return clamped
+    }
+
 }
