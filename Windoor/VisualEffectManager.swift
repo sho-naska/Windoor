@@ -11,6 +11,7 @@ class VisualEffectManager {
     static let shared = VisualEffectManager()
     
     private var overlayWindow: NSWindow?
+    private var lastCocoaFrame: CGRect?
     
     // 現代のmacOS (Big Sur以降) の標準的な角丸サイズに近い値
     private let cornerRadius: CGFloat = 12.0
@@ -64,12 +65,14 @@ class VisualEffectManager {
         let viewRect = CGRect(origin: .zero, size: cocoaFrame.size)
         let frameView = NSView(frame: viewRect)
         frameView.wantsLayer = true
+        frameView.autoresizingMask = [.width, .height]
         frameView.layer?.borderWidth = borderWidth
         frameView.layer?.borderColor = color.cgColor
         frameView.layer?.cornerRadius = cornerRadius
         
         window.contentView = frameView
-        window.setFrame(cocoaFrame, display: true)
+        lastCocoaFrame = cocoaFrame
+        window.setFrame(cocoaFrame, display: false)
         
         if mode == .error {
             flashErrorAnimation()
@@ -107,12 +110,9 @@ class VisualEffectManager {
     func updateFrame(_ frame: CGRect) {
         guard let window = overlayWindow else { return }
         let cocoaFrame = convertToCocoaFrame(frame)
-        window.setFrame(cocoaFrame, display: true)
-        
-        // フレームサイズが変わった場合、内部のViewもリサイズが必要
-        if let view = window.contentView {
-            view.frame = CGRect(origin: .zero, size: cocoaFrame.size)
-        }
+        guard cocoaFrame != lastCocoaFrame else { return }
+        lastCocoaFrame = cocoaFrame
+        window.setFrame(cocoaFrame, display: false)
     }
     
     func hideEffect() {
@@ -127,7 +127,7 @@ class VisualEffectManager {
     }
     
     private func convertToCocoaFrame(_ frame: CGRect) -> CGRect {
-        guard let screenHeight = NSScreen.screens.first?.frame.height else { return frame }
+        let screenHeight = CGDisplayBounds(CGMainDisplayID()).height
         var newRect = frame
         newRect.origin.y = screenHeight - frame.origin.y - frame.height
         return newRect

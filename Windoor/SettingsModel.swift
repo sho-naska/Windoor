@@ -81,7 +81,24 @@ struct ShortcutSetting: Codable, Equatable {
     }
     
     var isEmpty: Bool {
-        return flags == 0 && keyCode == -1
+        return !hasKeyboardTrigger
+    }
+
+    var hasKeyboardTrigger: Bool {
+        if keyCode >= 0 { return true }
+        let modifierMask: NSEvent.ModifierFlags = [.command, .shift, .control, .option]
+        return !NSEvent.ModifierFlags(rawValue: flags).intersection(modifierMask).isEmpty
+    }
+
+    func isHeld(eventFlags: CGEventFlags, pressedKeyCodes: Set<Int>) -> Bool {
+        guard !isEmpty else { return false }
+        if keyCode >= 0 {
+            let isKeyPressed = pressedKeyCodes.contains(keyCode) ||
+                CGEventSource.keyState(.combinedSessionState, key: CGKeyCode(keyCode))
+            guard isKeyPressed else { return false }
+            return matches(eventFlags: eventFlags, eventKeyCode: Int64(keyCode))
+        }
+        return matches(eventFlags: eventFlags, eventKeyCode: nil)
     }
 }
 
@@ -92,17 +109,39 @@ extension Notification.Name {
 
 class SettingsModel: ObservableObject {
     @Published var isMoveEnabled: Bool {
-        didSet { save(isMoveEnabled, key: "isMoveEnabled") }
+        didSet {
+            if isMoveEnabled && !moveSetting.hasKeyboardTrigger {
+                isMoveEnabled = false
+            }
+            save(isMoveEnabled, key: "isMoveEnabled")
+        }
     }
     
     @Published var isResizeEnabled: Bool {
-        didSet { save(isResizeEnabled, key: "isResizeEnabled") }
+        didSet {
+            if isResizeEnabled && !resizeSetting.hasKeyboardTrigger {
+                isResizeEnabled = false
+            }
+            save(isResizeEnabled, key: "isResizeEnabled")
+        }
     }
     
     @Published var isRecording: Bool = false
     
     @Published var recordingTimeout: Double {
         didSet { save(recordingTimeout, key: "recordingTimeout") }
+    }
+
+    @Published var preserveWindowOrder: Bool {
+        didSet { save(preserveWindowOrder, key: "preserveWindowOrder") }
+    }
+
+    @Published var horizontalConstraintSetting: ShortcutSetting {
+        didSet { save(horizontalConstraintSetting, key: "horizontalConstraintSetting") }
+    }
+
+    @Published var verticalConstraintSetting: ShortcutSetting {
+        didSet { save(verticalConstraintSetting, key: "verticalConstraintSetting") }
     }
     
     @Published var language: AppLanguage {
@@ -114,11 +153,21 @@ class SettingsModel: ObservableObject {
     }
     
     @Published var moveSetting: ShortcutSetting {
-        didSet { save(moveSetting, key: "moveSetting") }
+        didSet {
+            save(moveSetting, key: "moveSetting")
+            if !moveSetting.hasKeyboardTrigger {
+                isMoveEnabled = false
+            }
+        }
     }
     
     @Published var resizeSetting: ShortcutSetting {
-        didSet { save(resizeSetting, key: "resizeSetting") }
+        didSet {
+            save(resizeSetting, key: "resizeSetting")
+            if !resizeSetting.hasKeyboardTrigger {
+                isResizeEnabled = false
+            }
+        }
     }
     
     // 追加: ログイン時に自動実行
@@ -141,9 +190,42 @@ class SettingsModel: ObservableObject {
     }
     
     init() {
-        self.isMoveEnabled = UserDefaults.standard.object(forKey: "isMoveEnabled") as? Bool ?? true
-        self.isResizeEnabled = UserDefaults.standard.object(forKey: "isResizeEnabled") as? Bool ?? true
-        self.recordingTimeout = UserDefaults.standard.object(forKey: "recordingTimeout") as? Double ?? 1.5
+        let defaultMove = ShortcutSetting(
+            keyCode: -1,
+            flags: NSEvent.ModifierFlags.control.rawValue | NSEvent.ModifierFlags.command.rawValue,
+            mouseButton: .left,
+            allowModifierOnly: true
+        )
+        let defaultResize = ShortcutSetting(
+            keyCode: -1,
+            flags: NSEvent.ModifierFlags.shift.rawValue | NSEvent.ModifierFlags.command.rawValue,
+            mouseButton: .left,
+            allowModifierOnly: true
+        )
+        let loadedMove = SettingsModel.load(key: "moveSetting", type: ShortcutSetting.self) ?? defaultMove
+        let loadedResize = SettingsModel.load(key: "resizeSetting", type: ShortcutSetting.self) ?? defaultResize
+        let storedMoveEnabled = SettingsModel.loadBool(key: "isMoveEnabled") ?? true
+        let storedResizeEnabled = SettingsModel.loadBool(key: "isResizeEnabled") ?? true
+
+        self.isMoveEnabled = storedMoveEnabled && loadedMove.hasKeyboardTrigger
+        self.isResizeEnabled = storedResizeEnabled && loadedResize.hasKeyboardTrigger
+        self.recordingTimeout = SettingsModel.loadDouble(key: "recordingTimeout") ?? 1.5
+        self.preserveWindowOrder = SettingsModel.loadBool(key: "preserveWindowOrder") ?? false
+
+        let defaultAxisConstraint = ShortcutSetting(
+            keyCode: -1,
+            flags: NSEvent.ModifierFlags.shift.rawValue,
+            mouseButton: .left,
+            allowModifierOnly: true
+        )
+        self.horizontalConstraintSetting = SettingsModel.load(
+            key: "horizontalConstraintSetting",
+            type: ShortcutSetting.self
+        ) ?? defaultAxisConstraint
+        self.verticalConstraintSetting = SettingsModel.load(
+            key: "verticalConstraintSetting",
+            type: ShortcutSetting.self
+        ) ?? defaultAxisConstraint
         
         if let langData = UserDefaults.standard.data(forKey: "language"),
            let lang = try? JSONDecoder().decode(AppLanguage.self, from: langData) {
@@ -152,14 +234,11 @@ class SettingsModel: ObservableObject {
             self.language = .system
         }
         
-        let defaultMove = ShortcutSetting(keyCode: -1, flags: NSEvent.ModifierFlags.control.rawValue | NSEvent.ModifierFlags.command.rawValue, mouseButton: .left, allowModifierOnly: true)
-        let defaultResize = ShortcutSetting(keyCode: -1, flags: NSEvent.ModifierFlags.shift.rawValue | NSEvent.ModifierFlags.command.rawValue, mouseButton: .left, allowModifierOnly: true)
-        
-        self.moveSetting = SettingsModel.load(key: "moveSetting", type: ShortcutSetting.self) ?? defaultMove
-        self.resizeSetting = SettingsModel.load(key: "resizeSetting", type: ShortcutSetting.self) ?? defaultResize
+        self.moveSetting = loadedMove
+        self.resizeSetting = loadedResize
         
         // launchAtLogin 初期値: 保存済みがあればそれを使用、なければシステム状態から取得
-        if let stored = UserDefaults.standard.object(forKey: "launchAtLogin") as? Bool {
+        if let stored = SettingsModel.loadBool(key: "launchAtLogin") {
             self.launchAtLogin = stored
         } else {
             self.launchAtLogin = LoginItemManager.shared.isLaunchAtLoginEnabled()
@@ -178,5 +257,13 @@ class SettingsModel: ObservableObject {
             return value
         }
         return nil
+    }
+
+    private static func loadBool(key: String) -> Bool? {
+        load(key: key, type: Bool.self) ?? (UserDefaults.standard.object(forKey: key) as? Bool)
+    }
+
+    private static func loadDouble(key: String) -> Double? {
+        load(key: key, type: Double.self) ?? (UserDefaults.standard.object(forKey: key) as? Double)
     }
 }

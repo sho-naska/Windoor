@@ -2,7 +2,7 @@ import SwiftUI
 
 @main
 struct WindoorApp: App {
-    @StateObject var settings = SettingsModel()
+    @StateObject private var settings: SettingsModel
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     
     var body: some Scene {
@@ -13,7 +13,9 @@ struct WindoorApp: App {
     }
     
     init() {
-        AccessibilityManager.shared.settings = settings
+        let settingsModel = SettingsModel()
+        _settings = StateObject(wrappedValue: settingsModel)
+        AccessibilityManager.shared.settings = settingsModel
     }
 }
 
@@ -54,8 +56,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let restartTitle = LocalizationManager.shared.text("menuRestart", language: lang)
         let restartItem = NSMenuItem(title: restartTitle, action: #selector(restartApp), keyEquivalent: "r")
         if let image = NSImage(systemSymbolName: "arrow.clockwise", accessibilityDescription: nil) {
-            image.isTemplate = true
-            restartItem.image = image
+            restartItem.image = image.windoorMenuIcon()
         }
         menu.addItem(restartItem)
         
@@ -64,8 +65,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let quitTitle = LocalizationManager.shared.text("menuQuit", language: lang)
         let quitItem = NSMenuItem(title: quitTitle, action: #selector(terminateApp), keyEquivalent: "q")
         if let image = NSImage(systemSymbolName: "power", accessibilityDescription: nil) {
-            image.isTemplate = true
-            quitItem.image = image
+            quitItem.image = image.windoorMenuIcon()
         }
         menu.addItem(quitItem)
         
@@ -88,7 +88,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let title = LocalizationManager.shared.text("windowTitle", language: settings.language)
         window.title = title
         
-        window.setContentSize(NSSize(width: 440, height: 720))
+        window.setContentSize(NSSize(
+            width: WindoorDesign.Layout.settingsWidth,
+            height: WindoorDesign.Layout.settingsHeight
+        ))
         
         // リサイズ不可、閉じた時にメモリ解放せず保持する
         window.styleMask = [.titled, .closable, .miniaturizable]

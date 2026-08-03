@@ -15,8 +15,7 @@ struct SettingsView: View {
             ScrollView {
                 SettingsContent(settings: settings)
             }
-            // ここを旧シグネチャに戻す
-            .onChange(of: settings.language) {
+            .onChange(of: settings.language) { _ in
                 updateWindowTitle()
             }
             .onAppear {
@@ -25,7 +24,7 @@ struct SettingsView: View {
             
             footerArea
         }
-        .frame(width: 440)
+        .frame(width: WindoorDesign.Layout.settingsWidth)
     }
     
     private var footerArea: some View {
@@ -39,17 +38,19 @@ struct SettingsView: View {
                     .foregroundColor(.red)
             }
             .keyboardShortcut("q")
-            .alert(t("quitAlertTitle"), isPresented: $showQuitAlert) {
-                Button(t("quit"), role: .destructive) {
-                    NSApplication.shared.terminate(nil)
-                }
-                Button(t("cancel"), role: .cancel) {}
-            } message: {
-                Text(t("quitAlertMessage"))
+            .alert(isPresented: $showQuitAlert) {
+                Alert(
+                    title: Text(t("quitAlertTitle")),
+                    message: Text(t("quitAlertMessage")),
+                    primaryButton: .destructive(Text(t("quit"))) {
+                        NSApplication.shared.terminate(nil)
+                    },
+                    secondaryButton: .cancel(Text(t("cancel")))
+                )
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 12)
+        .padding(.horizontal, WindoorDesign.Layout.footerHorizontalPadding)
+        .padding(.vertical, WindoorDesign.Layout.footerVerticalPadding)
         .background(Color(NSColor.windowBackgroundColor))
         .overlay(
             Rectangle()
@@ -82,13 +83,13 @@ struct SettingsContent: View {
     }
     
     var body: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: WindoorDesign.Layout.sectionSpacing) {
             LanguageSettingCard(settings: settings)
             MoveSettingCard(settings: settings)
             ResizeSettingCard(settings: settings)
             DetailSettingCardView(settings: settings)
         }
-        .padding(20)
+        .padding(WindoorDesign.Layout.pagePadding)
     }
 }
 
@@ -106,11 +107,10 @@ struct LanguageSettingCard: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Image(systemName: "globe")
-                    .foregroundColor(.white)
-                    .frame(width: 28, height: 28)
-                    .background(Color.purple)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                WindoorIconBadge(
+                    systemName: "globe",
+                    color: WindoorDesign.Icon.languageColor
+                )
                 
                 Text(t("languageSettings"))
                     .font(.headline)
@@ -126,19 +126,24 @@ struct LanguageSettingCard: View {
                         }
                     }
                 }
-                .frame(width: 150)
+                .frame(width: WindoorDesign.Layout.controlColumnWidth)
                 .labelsHidden()
             }
-            .padding(12)
+            .padding(WindoorDesign.Layout.cardHeaderPadding)
             .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
         }
         .background(Color(NSColor.controlBackgroundColor))
-        .cornerRadius(12)
+        .cornerRadius(WindoorDesign.Card.cornerRadius)
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: WindoorDesign.Card.cornerRadius)
                 .stroke(Color(NSColor.separatorColor), lineWidth: 1)
         )
-        .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
+        .shadow(
+            color: Color.black.opacity(WindoorDesign.Card.shadowOpacity),
+            radius: WindoorDesign.Card.shadowRadius,
+            x: 0,
+            y: 1
+        )
     }
 }
 
@@ -157,8 +162,10 @@ struct MoveSettingCard: View {
         SettingCard(
             title: t("moveWindow"),
             icon: "arrow.up.and.down.and.arrow.left.and.right",
-            color: .blue,
-            isOn: $settings.isMoveEnabled
+            color: WindoorDesign.Icon.moveColor,
+            isOn: $settings.isMoveEnabled,
+            canEnable: settings.moveSetting.hasKeyboardTrigger,
+            isEditing: settings.isRecording
         ) {
             MoveResizeSettingContent(
                 setting: $settings.moveSetting,
@@ -183,8 +190,10 @@ struct ResizeSettingCard: View {
         SettingCard(
             title: t("resizeWindow"),
             icon: "arrow.up.left.and.arrow.down.right",
-            color: .orange,
-            isOn: $settings.isResizeEnabled
+            color: WindoorDesign.Icon.resizeColor,
+            isOn: $settings.isResizeEnabled,
+            canEnable: settings.resizeSetting.hasKeyboardTrigger,
+            isEditing: settings.isRecording
         ) {
             MoveResizeSettingContent(
                 setting: $settings.resizeSetting,
@@ -212,7 +221,7 @@ struct MoveResizeSettingContent: View {
             HStack(alignment: .top) {
                 Label(t("modifierKey"), systemImage: "keyboard")
                     .foregroundColor(.secondary)
-                    .frame(width: 110, alignment: .leading)
+                    .frame(width: WindoorDesign.Layout.rowLabelWidth, alignment: .leading)
                 
                 Spacer()
                 
@@ -230,7 +239,7 @@ struct MoveResizeSettingContent: View {
                         isConflict: settings.hasConflict,
                         language: settings.language
                     )
-                    .frame(width: 150)
+                    .frame(width: WindoorDesign.Layout.controlColumnWidth)
                     
                     Toggle(t("modifierOnly"), isOn: $setting.allowModifierOnly)
                         .toggleStyle(.checkbox)
@@ -243,7 +252,7 @@ struct MoveResizeSettingContent: View {
             HStack(alignment: .center) {
                 Label(t("click"), systemImage: "computermouse")
                     .foregroundColor(.secondary)
-                    .frame(width: 110, alignment: .leading)
+                    .frame(width: WindoorDesign.Layout.rowLabelWidth, alignment: .leading)
                 
                 Spacer()
                 
@@ -253,7 +262,7 @@ struct MoveResizeSettingContent: View {
                     }
                 }
                 .labelsHidden()
-                .frame(width: 150)
+                .frame(width: WindoorDesign.Layout.controlColumnWidth)
             }
         }
     }
@@ -274,9 +283,12 @@ struct DetailSettingCardView: View {
         DetailSettingCard(
             title: t("detailSettings"),
             icon: "wrench",
-            color: .gray         // スパナを灰色に
+            color: WindoorDesign.Icon.detailColor
         ) {
             VStack(alignment: .leading, spacing: 12) {
+                AxisConstraintSettings(settings: settings)
+
+                Divider()
                 
                 // 長押し時間
                 VStack(alignment: .leading, spacing: 4) {
@@ -295,12 +307,78 @@ struct DetailSettingCardView: View {
                 }
                 
                 Divider()
+
+                Toggle(isOn: $settings.preserveWindowOrder) {
+                    Text(t("preserveWindowOrder"))
+                }
+                .toggleStyle(.checkbox)
+
+                Divider()
                 
                 // ログイン時自動実行（アイコンなし）
                 Toggle(isOn: $settings.launchAtLogin) {
                     Text(t("launchAtLogin"))
                 }
                 .toggleStyle(.checkbox)
+            }
+        }
+    }
+}
+
+struct AxisConstraintSettings: View {
+    @ObservedObject var settings: SettingsModel
+
+    private func t(_ key: String) -> String {
+        LocalizationManager.shared.text(key, language: settings.language)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label(t("axisConstraint"), systemImage: "arrow.left.and.right")
+                .font(.headline)
+
+            Text(t("axisConstraintDesc"))
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            axisRow(
+                title: t("horizontalOnly"),
+                icon: "arrow.left.and.right",
+                setting: $settings.horizontalConstraintSetting
+            )
+
+            axisRow(
+                title: t("verticalOnly"),
+                icon: "arrow.up.and.down",
+                setting: $settings.verticalConstraintSetting
+            )
+        }
+    }
+
+    private func axisRow(
+        title: String,
+        icon: String,
+        setting: Binding<ShortcutSetting>
+    ) -> some View {
+        HStack(alignment: .top) {
+            Label(title, systemImage: icon)
+                .foregroundColor(.secondary)
+                .frame(width: WindoorDesign.Layout.rowLabelWidth, alignment: .leading)
+
+            Spacer()
+
+            VStack(alignment: .leading, spacing: 6) {
+                KeyRecorderButton(
+                    setting: setting,
+                    isGlobalRecording: $settings.isRecording,
+                    timeout: settings.recordingTimeout,
+                    isConflict: false,
+                    language: settings.language
+                )
+                .frame(width: WindoorDesign.Layout.controlColumnWidth)
+
+                Toggle(t("modifierOnly"), isOn: setting.allowModifierOnly)
+                    .toggleStyle(.checkbox)
             }
         }
     }
@@ -315,24 +393,32 @@ struct SettingCard<Content: View>: View {
     let icon: String
     let color: Color
     @Binding var isOn: Bool
+    let canEnable: Bool
+    let isEditing: Bool
     let content: Content
     
-    init(title: String, icon: String, color: Color, isOn: Binding<Bool>, @ViewBuilder content: () -> Content) {
+    init(
+        title: String,
+        icon: String,
+        color: Color,
+        isOn: Binding<Bool>,
+        canEnable: Bool = true,
+        isEditing: Bool = false,
+        @ViewBuilder content: () -> Content
+    ) {
         self.title = title
         self.icon = icon
         self.color = color
         self._isOn = isOn
+        self.canEnable = canEnable
+        self.isEditing = isEditing
         self.content = content()
     }
     
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Image(systemName: icon)
-                    .foregroundColor(.white)
-                    .frame(width: 28, height: 28)
-                    .background(isOn ? color : .gray)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                WindoorIconBadge(systemName: icon, color: isOn ? color : .gray)
                 
                 Text(title)
                     .font(.headline)
@@ -342,24 +428,30 @@ struct SettingCard<Content: View>: View {
                 
                 Toggle("", isOn: $isOn)
                     .toggleStyle(.switch)
+                    .disabled(!canEnable)
             }
-            .padding(12)
+            .padding(WindoorDesign.Layout.cardHeaderPadding)
             .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
             
             Divider()
             
             content
-                .padding(16)
-                .opacity(isOn ? 1 : 0.5)
-                .disabled(!isOn)
+                .padding(WindoorDesign.Layout.cardContentPadding)
+                .opacity(isOn || !canEnable || isEditing ? 1 : 0.5)
+                .disabled(!isOn && canEnable && !isEditing)
         }
         .background(Color(NSColor.controlBackgroundColor))
-        .cornerRadius(12)
+        .cornerRadius(WindoorDesign.Card.cornerRadius)
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: WindoorDesign.Card.cornerRadius)
                 .stroke(Color(NSColor.separatorColor), lineWidth: 1)
         )
-        .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
+        .shadow(
+            color: .black.opacity(WindoorDesign.Card.shadowOpacity),
+            radius: WindoorDesign.Card.shadowRadius,
+            x: 0,
+            y: 1
+        )
     }
 }
 
@@ -379,32 +471,33 @@ struct DetailSettingCard<Content: View>: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Image(systemName: icon)
-                    .foregroundColor(.white)
-                    .frame(width: 28, height: 28)
-                    .background(color)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                WindoorIconBadge(systemName: icon, color: color)
                 
                 Text(title)
                     .font(.headline)
                 
                 Spacer()
             }
-            .padding(12)
+            .padding(WindoorDesign.Layout.cardHeaderPadding)
             .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
             
             Divider()
             
             content
-                .padding(16)
+                .padding(WindoorDesign.Layout.cardContentPadding)
         }
         .background(Color(NSColor.controlBackgroundColor))
-        .cornerRadius(12)
+        .cornerRadius(WindoorDesign.Card.cornerRadius)
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: WindoorDesign.Card.cornerRadius)
                 .stroke(Color(NSColor.separatorColor), lineWidth: 1)
         )
-        .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
+        .shadow(
+            color: .black.opacity(WindoorDesign.Card.shadowOpacity),
+            radius: WindoorDesign.Card.shadowRadius,
+            x: 0,
+            y: 1
+        )
     }
 }
 
@@ -458,9 +551,7 @@ struct KeyRecorderButton: View {
                 
                 HStack {
                     if isRecordingSelf {
-                        Image(systemName: "record.circle.fill")
-                            .foregroundColor(.red)
-                            .symbolEffect(.pulse)
+                        recordingIndicator
                         
                         if setting.flags == 0 && setting.keyCode == -1 {
                             if setting.allowModifierOnly {
@@ -507,6 +598,18 @@ struct KeyRecorderButton: View {
         if isRecordingSelf { return .blue }
         if isConflict { return .red }
         return Color(NSColor.separatorColor)
+    }
+
+    @ViewBuilder
+    private var recordingIndicator: some View {
+        if #available(macOS 14.0, *) {
+            Image(systemName: "record.circle.fill")
+                .foregroundColor(.red)
+                .symbolEffect(.pulse)
+        } else {
+            Image(systemName: "record.circle.fill")
+                .foregroundColor(.red)
+        }
     }
     
     private func startRecording() {
