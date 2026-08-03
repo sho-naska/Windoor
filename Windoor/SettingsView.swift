@@ -15,7 +15,7 @@ struct SettingsView: View {
             ScrollView {
                 SettingsContent(settings: settings)
             }
-            .onChange(of: settings.language) { _ in
+            .onChange(of: settings.language) {
                 updateWindowTitle()
             }
             .onAppear {
@@ -38,15 +38,13 @@ struct SettingsView: View {
                     .foregroundColor(.red)
             }
             .keyboardShortcut("q")
-            .alert(isPresented: $showQuitAlert) {
-                Alert(
-                    title: Text(t("quitAlertTitle")),
-                    message: Text(t("quitAlertMessage")),
-                    primaryButton: .destructive(Text(t("quit"))) {
-                        NSApplication.shared.terminate(nil)
-                    },
-                    secondaryButton: .cancel(Text(t("cancel")))
-                )
+            .alert(t("quitAlertTitle"), isPresented: $showQuitAlert) {
+                Button(t("quit"), role: .destructive) {
+                    NSApplication.shared.terminate(nil)
+                }
+                Button(t("cancel"), role: .cancel) {}
+            } message: {
+                Text(t("quitAlertMessage"))
             }
         }
         .padding(.horizontal, WindoorDesign.Layout.footerHorizontalPadding)
@@ -339,7 +337,7 @@ struct AxisConstraintSettings: View {
 
             Text(t("axisConstraintDesc"))
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
 
             axisRow(
                 title: t("horizontalOnly"),
@@ -362,7 +360,7 @@ struct AxisConstraintSettings: View {
     ) -> some View {
         HStack(alignment: .top) {
             Label(title, systemImage: icon)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .frame(width: WindoorDesign.Layout.rowLabelWidth, alignment: .leading)
 
             Spacer()
@@ -551,7 +549,9 @@ struct KeyRecorderButton: View {
                 
                 HStack {
                     if isRecordingSelf {
-                        recordingIndicator
+                        Image(systemName: "record.circle.fill")
+                            .foregroundColor(.red)
+                            .symbolEffect(.pulse)
                         
                         if setting.flags == 0 && setting.keyCode == -1 {
                             if setting.allowModifierOnly {
@@ -600,18 +600,6 @@ struct KeyRecorderButton: View {
         return Color(NSColor.separatorColor)
     }
 
-    @ViewBuilder
-    private var recordingIndicator: some View {
-        if #available(macOS 14.0, *) {
-            Image(systemName: "record.circle.fill")
-                .foregroundColor(.red)
-                .symbolEffect(.pulse)
-        } else {
-            Image(systemName: "record.circle.fill")
-                .foregroundColor(.red)
-        }
-    }
-    
     private func startRecording() {
         if isGlobalRecording { return }
         

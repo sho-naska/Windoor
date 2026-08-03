@@ -37,7 +37,7 @@ struct WindoorIconBadge: View {
 
     var body: some View {
         Image(systemName: systemName)
-            .foregroundColor(.white)
+            .foregroundStyle(.white)
             .frame(width: WindoorDesign.Icon.badgeSize, height: WindoorDesign.Icon.badgeSize)
             .background(color)
             .clipShape(RoundedRectangle(cornerRadius: WindoorDesign.Icon.badgeCornerRadius))
