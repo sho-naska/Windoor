@@ -62,4 +62,38 @@ struct WindowHitTestingTests {
 
         #expect(selected?.processIdentifier == 202)
     }
+
+    @Test func ignoresDisplaySizedSystemOverlayButKeepsSmallElevatedPanels() {
+        let displayFrame = CGRect(x: 0, y: 0, width: 1680, height: 1050)
+        let point = CGPoint(x: 600, y: 400)
+        let candidates = [
+            WindowHitTestCandidate(
+                processIdentifier: 101,
+                frame: displayFrame,
+                layer: 20,
+                alpha: 1
+            ),
+            WindowHitTestCandidate(
+                processIdentifier: 202,
+                frame: CGRect(x: 500, y: 300, width: 240, height: 220),
+                layer: 3,
+                alpha: 1
+            ),
+            WindowHitTestCandidate(
+                processIdentifier: 303,
+                frame: CGRect(x: 200, y: 100, width: 1000, height: 700),
+                layer: 0,
+                alpha: 1
+            )
+        ]
+
+        let selected = WindowHitTester.frontmostCandidate(
+            at: point,
+            candidates: candidates,
+            excludingProcessIdentifier: 999,
+            displayFrames: [displayFrame]
+        )
+
+        #expect(selected?.processIdentifier == 202)
+    }
 }

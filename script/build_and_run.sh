@@ -23,7 +23,7 @@ strip_codesign_detritus() {
   /usr/bin/xattr -dr com.apple.ResourceFork "$target" >/dev/null 2>&1 || true
 }
 
-strip_codesign_detritus "$ROOT_DIR/Windoor/AppIcon.icon"
+strip_codesign_detritus "$ROOT_DIR/icon/Windoor.icon"
 strip_codesign_detritus "$APP_BUNDLE"
 
 xcodebuild \

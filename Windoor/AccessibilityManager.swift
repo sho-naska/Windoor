@@ -17,12 +17,28 @@ enum WindowHitTester {
     static func frontmostCandidate(
         at location: CGPoint,
         candidates: [WindowHitTestCandidate],
-        excludingProcessIdentifier: pid_t
+        excludingProcessIdentifier: pid_t,
+        displayFrames: [CGRect] = []
     ) -> WindowHitTestCandidate? {
         candidates.first { candidate in
             candidate.processIdentifier != excludingProcessIdentifier &&
                 candidate.alpha > 0 &&
+                !isDisplaySizedOverlay(candidate, displayFrames: displayFrames) &&
                 candidate.frame.contains(location)
+        }
+    }
+
+    private static func isDisplaySizedOverlay(
+        _ candidate: WindowHitTestCandidate,
+        displayFrames: [CGRect]
+    ) -> Bool {
+        guard candidate.layer != 0 else { return false }
+
+        return displayFrames.contains { displayFrame in
+            abs(candidate.frame.minX - displayFrame.minX) <= 1 &&
+                abs(candidate.frame.minY - displayFrame.minY) <= 1 &&
+                abs(candidate.frame.width - displayFrame.width) <= 1 &&
+                abs(candidate.frame.height - displayFrame.height) <= 1
         }
     }
 }
@@ -623,9 +639,26 @@ class AccessibilityManager {
         guard let candidate = WindowHitTester.frontmostCandidate(
             at: location,
             candidates: candidates,
-            excludingProcessIdentifier: getpid()
+            excludingProcessIdentifier: getpid(),
+            displayFrames: activeDisplayFrames()
         ) else { return nil }
         return (candidate.processIdentifier, candidate.frame)
+    }
+
+    private func activeDisplayFrames() -> [CGRect] {
+        var displayCount: UInt32 = 0
+        guard CGGetActiveDisplayList(0, nil, &displayCount) == .success,
+              displayCount > 0
+        else { return [] }
+
+        var displayIdentifiers = Array(repeating: CGDirectDisplayID(), count: Int(displayCount))
+        guard CGGetActiveDisplayList(
+            displayCount,
+            &displayIdentifiers,
+            &displayCount
+        ) == .success else { return [] }
+
+        return displayIdentifiers.prefix(Int(displayCount)).map(CGDisplayBounds)
     }
 
     private func cgWindowFrame(from window: [CFString: Any]) -> CGRect? {

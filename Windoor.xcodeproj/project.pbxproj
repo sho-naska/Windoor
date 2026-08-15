@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		A15F60A52F42000000C0D001 /* Windoor.icon in Resources */ = {isa = PBXBuildFile; fileRef = A15F60A42F42000000C0D001 /* Windoor.icon */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		40D4C2E72EDE042100561458 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -24,6 +28,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		A15F60A42F42000000C0D001 /* Windoor.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; name = Windoor.icon; path = icon/Windoor.icon; sourceTree = SOURCE_ROOT; };
 		40D4C2D92EDE041F00561458 /* Windoor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Windoor.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		40D4C2E62EDE042100561458 /* WindoorTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WindoorTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		40D4C2F02EDE042100561458 /* WindoorUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WindoorUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -75,6 +80,7 @@
 		40D4C2D02EDE041F00561458 = {
 			isa = PBXGroup;
 			children = (
+				A15F60A42F42000000C0D001 /* Windoor.icon */,
 				40D4C2DB2EDE041F00561458 /* Windoor */,
 				40D4C2E92EDE042100561458 /* WindoorTests */,
 				40D4C2F32EDE042100561458 /* WindoorUITests */,
@@ -212,6 +218,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A15F60A52F42000000C0D001 /* Windoor.icon in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -392,7 +399,7 @@
 		40D4C2FB2EDE042100561458 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = Windoor;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_STYLE = Automatic;
@@ -426,7 +433,7 @@
 		40D4C2FC2EDE042100561458 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = Windoor;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_STYLE = Automatic;
