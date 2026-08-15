@@ -33,7 +33,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         
         if let button = statusItem?.button {
-            button.image = NSImage(systemSymbolName: "macwindow", accessibilityDescription: "Windoor")
+            let icon = NSImage(named: "WindoorMenuBarIcon")
+            icon?.isTemplate = true
+            icon?.size = NSSize(width: 18, height: 18)
+            button.image = icon
         }
         
         updateMenu()

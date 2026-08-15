@@ -141,6 +141,81 @@ struct WindowInteractionEngineTests {
         #expect(vertical.origin == CGPoint(x: 20, y: 90))
     }
 
+    @Test func nearestAndFarthestAnchorsResolveToDiagonalCorners() {
+        let frame = CGRect(x: 100, y: 200, width: 400, height: 300)
+
+        #expect(
+            ResizeAnchorCorner(
+                selection: .nearest,
+                windowFrame: frame,
+                cursorLocation: CGPoint(x: 120, y: 225)
+            ) == .topLeft
+        )
+        #expect(
+            ResizeAnchorCorner(
+                selection: .farthest,
+                windowFrame: frame,
+                cursorLocation: CGPoint(x: 120, y: 225)
+            ) == .bottomRight
+        )
+        #expect(
+            ResizeAnchorCorner(
+                selection: .nearest,
+                windowFrame: frame,
+                cursorLocation: CGPoint(x: 485, y: 480)
+            ) == .bottomRight
+        )
+        #expect(
+            ResizeAnchorCorner(
+                selection: .farthest,
+                windowFrame: frame,
+                cursorLocation: CGPoint(x: 485, y: 480)
+            ) == .topLeft
+        )
+    }
+
+    @Test func resizeAnchorTransformKeepsTheSelectedCornerFixed() {
+        let initialFrame = CGRect(x: 100, y: 200, width: 300, height: 400)
+        let initialPointer = CGPoint(x: 250, y: 400)
+        let cases: [(ResizeAnchorCorner, CGPoint, CGPoint)] = [
+            (.topLeft, CGPoint(x: 270, y: 430), CGPoint(x: 100, y: 200)),
+            (.topRight, CGPoint(x: 230, y: 430), CGPoint(x: 400, y: 200)),
+            (.bottomLeft, CGPoint(x: 270, y: 370), CGPoint(x: 100, y: 600)),
+            (.bottomRight, CGPoint(x: 230, y: 370), CGPoint(x: 400, y: 600))
+        ]
+
+        for (anchor, draggedPointer, fixedCorner) in cases {
+            let transform = ResizeAnchorTransform(anchor: anchor)
+            var engine = WindowInteractionEngine(
+                mode: .resize,
+                initialFrame: transform.engineFrame(from: initialFrame),
+                initialPointer: transform.enginePoint(from: initialPointer),
+                obstacleFrames: [],
+                timestamp: 0
+            )
+
+            let resizedFrame = transform.screenFrame(
+                from: engine.frame(
+                    for: transform.enginePoint(from: draggedPointer),
+                    timestamp: 0.2,
+                    constraint: .none
+                )
+            )
+
+            #expect(resizedFrame.size == CGSize(width: 320, height: 430))
+            switch anchor {
+            case .topLeft:
+                #expect(resizedFrame.origin == fixedCorner)
+            case .topRight:
+                #expect(CGPoint(x: resizedFrame.maxX, y: resizedFrame.minY) == fixedCorner)
+            case .bottomLeft:
+                #expect(CGPoint(x: resizedFrame.minX, y: resizedFrame.maxY) == fixedCorner)
+            case .bottomRight:
+                #expect(CGPoint(x: resizedFrame.maxX, y: resizedFrame.maxY) == fixedCorner)
+            }
+        }
+    }
+
     @Test func mouseOnlyShortcutIsNotAKeyboardTrigger() {
         let mouseOnly = ShortcutSetting(
             keyCode: -1,

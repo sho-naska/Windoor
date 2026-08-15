@@ -193,10 +193,30 @@ struct ResizeSettingCard: View {
             canEnable: settings.resizeSetting.hasKeyboardTrigger,
             isEditing: settings.isRecording
         ) {
-            MoveResizeSettingContent(
-                setting: $settings.resizeSetting,
-                settings: settings
-            )
+            VStack(spacing: 16) {
+                MoveResizeSettingContent(
+                    setting: $settings.resizeSetting,
+                    settings: settings
+                )
+
+                Divider()
+
+                HStack(alignment: .center) {
+                    Label(t("anchorPoint"), systemImage: "arrow.up.left.and.arrow.down.right")
+                        .foregroundColor(.secondary)
+                        .frame(width: WindoorDesign.Layout.rowLabelWidth, alignment: .leading)
+
+                    Spacer()
+
+                    Picker("", selection: $settings.resizeAnchorPoint) {
+                        ForEach(ResizeAnchorPoint.allCases) { anchorPoint in
+                            Text(anchorPoint.localizedName(lang: settings.language)).tag(anchorPoint)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: WindoorDesign.Layout.controlColumnWidth)
+                }
+            }
         }
     }
 }

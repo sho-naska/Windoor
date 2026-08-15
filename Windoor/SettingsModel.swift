@@ -16,6 +16,33 @@ enum MouseButton: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+// リサイズ時に固定するウィンドウの角
+enum ResizeAnchorPoint: String, Codable, CaseIterable, Identifiable {
+    case topLeft
+    case topRight
+    case bottomLeft
+    case bottomRight
+    case nearest
+    case farthest
+
+    var id: String { self.rawValue }
+
+    private var localizationKey: String {
+        switch self {
+        case .topLeft: return "anchorTopLeft"
+        case .topRight: return "anchorTopRight"
+        case .bottomLeft: return "anchorBottomLeft"
+        case .bottomRight: return "anchorBottomRight"
+        case .nearest: return "anchorNearest"
+        case .farthest: return "anchorFarthest"
+        }
+    }
+
+    func localizedName(lang: AppLanguage) -> String {
+        LocalizationManager.shared.text(localizationKey, language: lang)
+    }
+}
+
 // ショートカット設定
 struct ShortcutSetting: Codable, Equatable {
     var keyCode: Int = -1
@@ -136,6 +163,10 @@ class SettingsModel: ObservableObject {
         didSet { save(preserveWindowOrder, key: "preserveWindowOrder") }
     }
 
+    @Published var resizeAnchorPoint: ResizeAnchorPoint {
+        didSet { save(resizeAnchorPoint, key: "resizeAnchorPoint") }
+    }
+
     @Published var horizontalConstraintSetting: ShortcutSetting {
         didSet { save(horizontalConstraintSetting, key: "horizontalConstraintSetting") }
     }
@@ -211,6 +242,10 @@ class SettingsModel: ObservableObject {
         self.isResizeEnabled = storedResizeEnabled && loadedResize.hasKeyboardTrigger
         self.recordingTimeout = SettingsModel.loadDouble(key: "recordingTimeout") ?? 1.5
         self.preserveWindowOrder = SettingsModel.loadBool(key: "preserveWindowOrder") ?? false
+        self.resizeAnchorPoint = SettingsModel.load(
+            key: "resizeAnchorPoint",
+            type: ResizeAnchorPoint.self
+        ) ?? .topLeft
 
         let defaultAxisConstraint = ShortcutSetting(
             keyCode: -1,

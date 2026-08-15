@@ -7,6 +7,101 @@ enum DragAxisConstraint: Equatable {
     case vertical
 }
 
+/// A concrete corner resolved from the user's resize-anchor preference.
+enum ResizeAnchorCorner: Equatable {
+    case topLeft
+    case topRight
+    case bottomLeft
+    case bottomRight
+
+    init(
+        selection: ResizeAnchorPoint,
+        windowFrame: CGRect,
+        cursorLocation: CGPoint
+    ) {
+        switch selection {
+        case .topLeft:
+            self = .topLeft
+        case .topRight:
+            self = .topRight
+        case .bottomLeft:
+            self = .bottomLeft
+        case .bottomRight:
+            self = .bottomRight
+        case .nearest, .farthest:
+            let nearest = Self.nearest(to: cursorLocation, in: windowFrame)
+            self = selection == .nearest ? nearest : nearest.opposite
+        }
+    }
+
+    private var opposite: Self {
+        switch self {
+        case .topLeft: .bottomRight
+        case .topRight: .bottomLeft
+        case .bottomLeft: .topRight
+        case .bottomRight: .topLeft
+        }
+    }
+
+    private static func nearest(to cursorLocation: CGPoint, in windowFrame: CGRect) -> Self {
+        let corners: [(corner: Self, location: CGPoint)] = [
+            (.topLeft, CGPoint(x: windowFrame.minX, y: windowFrame.minY)),
+            (.topRight, CGPoint(x: windowFrame.maxX, y: windowFrame.minY)),
+            (.bottomLeft, CGPoint(x: windowFrame.minX, y: windowFrame.maxY)),
+            (.bottomRight, CGPoint(x: windowFrame.maxX, y: windowFrame.maxY))
+        ]
+
+        return corners.min { lhs, rhs in
+            let lhsDeltaX = lhs.location.x - cursorLocation.x
+            let lhsDeltaY = lhs.location.y - cursorLocation.y
+            let rhsDeltaX = rhs.location.x - cursorLocation.x
+            let rhsDeltaY = rhs.location.y - cursorLocation.y
+            let lhsDistance = lhsDeltaX * lhsDeltaX + lhsDeltaY * lhsDeltaY
+            let rhsDistance = rhsDeltaX * rhsDeltaX + rhsDeltaY * rhsDeltaY
+            return lhsDistance < rhsDistance
+        }!.corner
+    }
+}
+
+/// Reflects the axes whose far edge is fixed so the interaction engine can always
+/// operate as if the top-left corner were fixed.
+struct ResizeAnchorTransform {
+    let anchor: ResizeAnchorCorner
+
+    private var reflectsHorizontally: Bool {
+        anchor == .topRight || anchor == .bottomRight
+    }
+
+    private var reflectsVertically: Bool {
+        anchor == .bottomLeft || anchor == .bottomRight
+    }
+
+    func enginePoint(from screenPoint: CGPoint) -> CGPoint {
+        CGPoint(
+            x: reflectsHorizontally ? -screenPoint.x : screenPoint.x,
+            y: reflectsVertically ? -screenPoint.y : screenPoint.y
+        )
+    }
+
+    func engineFrame(from screenFrame: CGRect) -> CGRect {
+        CGRect(
+            x: reflectsHorizontally ? -screenFrame.maxX : screenFrame.minX,
+            y: reflectsVertically ? -screenFrame.maxY : screenFrame.minY,
+            width: screenFrame.width,
+            height: screenFrame.height
+        )
+    }
+
+    func screenFrame(from engineFrame: CGRect) -> CGRect {
+        CGRect(
+            x: reflectsHorizontally ? -engineFrame.maxX : engineFrame.minX,
+            y: reflectsVertically ? -engineFrame.maxY : engineFrame.minY,
+            width: engineFrame.width,
+            height: engineFrame.height
+        )
+    }
+}
+
 struct EdgeResistanceConfiguration: Equatable {
     /// Pointer speeds above this value pass through neighboring edges without resistance.
     var slowVelocityThreshold: CGFloat = 500
