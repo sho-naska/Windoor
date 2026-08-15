@@ -34,7 +34,7 @@ xcodebuild \
   -destination "platform=macOS" \
   -derivedDataPath "$DERIVED_DATA_DIR" \
   CODE_SIGNING_ALLOWED=NO \
-  build
+  clean build
 
 strip_codesign_detritus "$APP_BUNDLE"
 /usr/bin/codesign --force --sign "$SIGNING_IDENTITY" "$APP_BUNDLE"
@@ -42,6 +42,9 @@ strip_codesign_detritus "$APP_BUNDLE"
 # It is not part of the signature, so clear it once more before verification.
 strip_codesign_detritus "$APP_BUNDLE"
 /usr/bin/codesign --verify --deep --strict "$APP_BUNDLE"
+# Incremental app bundles can retain their old directory timestamp even when
+# their contents changed. Refresh it so Finder and Quick Look invalidate icons.
+/usr/bin/touch "$APP_BUNDLE"
 
 open_app() {
   /usr/bin/open -n "$APP_BUNDLE"
@@ -65,7 +68,9 @@ case "$MODE" in
   --verify|verify)
     open_app
     sleep 1
-    pgrep -f "$APP_BINARY" >/dev/null
+    PROCESS_ID="$(pgrep -f -x "$APP_BINARY")"
+    [[ -n "$PROCESS_ID" ]]
+    echo "Launched $APP_BINARY (PID $PROCESS_ID)"
     ;;
   *)
     echo "usage: $0 [run|--debug|--logs|--telemetry|--verify]" >&2
