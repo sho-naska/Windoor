@@ -108,13 +108,21 @@ struct ShortcutSetting: Codable, Equatable {
     }
     
     var isEmpty: Bool {
-        return !hasKeyboardTrigger
+        return !isValidTrigger
     }
 
     var hasKeyboardTrigger: Bool {
         if keyCode >= 0 { return true }
         let modifierMask: NSEvent.ModifierFlags = [.command, .shift, .control, .option]
         return !NSEvent.ModifierFlags(rawValue: flags).intersection(modifierMask).isEmpty
+    }
+
+    var isLeftClickOnly: Bool {
+        mouseButton == .left && !hasKeyboardTrigger
+    }
+
+    var isValidTrigger: Bool {
+        hasKeyboardTrigger || mouseButton != .left
     }
 
     func isHeld(eventFlags: CGEventFlags, pressedKeyCodes: Set<Int>) -> Bool {
@@ -132,12 +140,13 @@ struct ShortcutSetting: Codable, Equatable {
 // 言語変更通知用の名前
 extension Notification.Name {
     static let languageDidChange = Notification.Name("languageDidChange")
+    static let menuBarIconVisibilityDidChange = Notification.Name("menuBarIconVisibilityDidChange")
 }
 
 class SettingsModel: ObservableObject {
     @Published var isMoveEnabled: Bool {
         didSet {
-            if isMoveEnabled && !moveSetting.hasKeyboardTrigger {
+            if isMoveEnabled && !moveSetting.isValidTrigger {
                 isMoveEnabled = false
             }
             save(isMoveEnabled, key: "isMoveEnabled")
@@ -146,7 +155,7 @@ class SettingsModel: ObservableObject {
     
     @Published var isResizeEnabled: Bool {
         didSet {
-            if isResizeEnabled && !resizeSetting.hasKeyboardTrigger {
+            if isResizeEnabled && !resizeSetting.isValidTrigger {
                 isResizeEnabled = false
             }
             save(isResizeEnabled, key: "isResizeEnabled")
@@ -161,6 +170,13 @@ class SettingsModel: ObservableObject {
 
     @Published var preserveWindowOrder: Bool {
         didSet { save(preserveWindowOrder, key: "preserveWindowOrder") }
+    }
+
+    @Published var showMenuBarIcon: Bool {
+        didSet {
+            save(showMenuBarIcon, key: "showMenuBarIcon")
+            NotificationCenter.default.post(name: .menuBarIconVisibilityDidChange, object: nil)
+        }
     }
 
     @Published var resizeAnchorPoint: ResizeAnchorPoint {
@@ -186,8 +202,10 @@ class SettingsModel: ObservableObject {
     @Published var moveSetting: ShortcutSetting {
         didSet {
             save(moveSetting, key: "moveSetting")
-            if !moveSetting.hasKeyboardTrigger {
+            if !moveSetting.isValidTrigger {
                 isMoveEnabled = false
+            } else if oldValue.isLeftClickOnly && moveSetting.hasKeyboardTrigger {
+                isMoveEnabled = true
             }
         }
     }
@@ -195,8 +213,10 @@ class SettingsModel: ObservableObject {
     @Published var resizeSetting: ShortcutSetting {
         didSet {
             save(resizeSetting, key: "resizeSetting")
-            if !resizeSetting.hasKeyboardTrigger {
+            if !resizeSetting.isValidTrigger {
                 isResizeEnabled = false
+            } else if oldValue.isLeftClickOnly && resizeSetting.hasKeyboardTrigger {
+                isResizeEnabled = true
             }
         }
     }
@@ -238,10 +258,11 @@ class SettingsModel: ObservableObject {
         let storedMoveEnabled = SettingsModel.loadBool(key: "isMoveEnabled") ?? true
         let storedResizeEnabled = SettingsModel.loadBool(key: "isResizeEnabled") ?? true
 
-        self.isMoveEnabled = storedMoveEnabled && loadedMove.hasKeyboardTrigger
-        self.isResizeEnabled = storedResizeEnabled && loadedResize.hasKeyboardTrigger
+        self.isMoveEnabled = storedMoveEnabled && loadedMove.isValidTrigger
+        self.isResizeEnabled = storedResizeEnabled && loadedResize.isValidTrigger
         self.recordingTimeout = SettingsModel.loadDouble(key: "recordingTimeout") ?? 1.5
         self.preserveWindowOrder = SettingsModel.loadBool(key: "preserveWindowOrder") ?? false
+        self.showMenuBarIcon = SettingsModel.loadBool(key: "showMenuBarIcon") ?? true
         self.resizeAnchorPoint = SettingsModel.load(
             key: "resizeAnchorPoint",
             type: ResizeAnchorPoint.self

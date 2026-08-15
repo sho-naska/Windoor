@@ -17,12 +17,10 @@ enum WindowHitTester {
     static func frontmostCandidate(
         at location: CGPoint,
         candidates: [WindowHitTestCandidate],
-        excludingProcessIdentifier: pid_t,
         displayFrames: [CGRect] = []
     ) -> WindowHitTestCandidate? {
         candidates.first { candidate in
-            candidate.processIdentifier != excludingProcessIdentifier &&
-                candidate.alpha > 0 &&
+            candidate.alpha > 0 &&
                 !isDisplaySizedOverlay(candidate, displayFrames: displayFrames) &&
                 candidate.frame.contains(location)
         }
@@ -474,7 +472,7 @@ class AccessibilityManager {
     }
     
     private func shouldActivate(setting: ShortcutSetting, flags: CGEventFlags, isEnabled: Bool, eventType: CGEventType) -> Bool {
-        guard isEnabled, setting.hasKeyboardTrigger else { return false }
+        guard isEnabled, setting.isValidTrigger else { return false }
         
         let buttonMatches: Bool
         switch setting.mouseButton {
@@ -492,9 +490,10 @@ class AccessibilityManager {
             let isKeyPressed = pressedKeyCodes.contains(setting.keyCode) ||
                 CGEventSource.keyState(.combinedSessionState, key: CGKeyCode(setting.keyCode))
             return isKeyPressed && setting.matches(eventFlags: flags, eventKeyCode: Int64(setting.keyCode))
-        } else {
+        } else if setting.hasKeyboardTrigger {
             return setting.matches(eventFlags: flags, eventKeyCode: nil)
         }
+        return true
     }
 
     private func isMouseDown(_ type: CGEventType) -> Bool {
@@ -510,6 +509,27 @@ class AccessibilityManager {
     }
     
     private func getElementAtLocation(_ location: CGPoint) -> AXUIElement? {
+        // CGWindowList can omit the calling process's own windows while the event
+        // tap is handling a global mouse event. AX hit testing still identifies
+        // Windoor when it is actually visible at this point, so accept only that
+        // self-owned result before entering the CG-ordered path for other apps.
+        let systemWide = AXUIElementCreateSystemWide()
+        var ownHitElement: AXUIElement?
+        if AXUIElementCopyElementAtPosition(
+            systemWide,
+            Float(location.x),
+            Float(location.y),
+            &ownHitElement
+        ) == .success,
+           let ownHitElement,
+           let ownWindow = getWindow(from: ownHitElement) {
+            var processIdentifier: pid_t = 0
+            if AXUIElementGetPid(ownWindow, &processIdentifier) == .success,
+               processIdentifier == getpid() {
+                return ownWindow
+            }
+        }
+
         // AX hit testing can omit nonstandard panels (such as Quick Look and Adobe color pickers)
         // and report an underlying window instead. Resolve the visually frontmost window first.
         if let cgWindow = frontmostCGWindow(at: location) {
@@ -522,7 +542,6 @@ class AccessibilityManager {
             )
         }
 
-        let systemWide = AXUIElementCreateSystemWide()
         var element: AXUIElement?
         let result = AXUIElementCopyElementAtPosition(systemWide, Float(location.x), Float(location.y), &element)
         if result == .success, let element {
@@ -639,7 +658,6 @@ class AccessibilityManager {
         guard let candidate = WindowHitTester.frontmostCandidate(
             at: location,
             candidates: candidates,
-            excludingProcessIdentifier: getpid(),
             displayFrames: activeDisplayFrames()
         ) else { return nil }
         return (candidate.processIdentifier, candidate.frame)

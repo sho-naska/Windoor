@@ -3,6 +3,7 @@ import CoreGraphics
 import Testing
 @testable import Windoor
 
+@MainActor
 struct WindowInteractionEngineTests {
     @Test func slowMoveResistsThenKeepsShiftedGrabOffset() {
         var engine = WindowInteractionEngine(
@@ -237,7 +238,21 @@ struct WindowInteractionEngineTests {
         )
 
         #expect(!mouseOnly.hasKeyboardTrigger)
+        #expect(mouseOnly.isLeftClickOnly)
+        #expect(!mouseOnly.isValidTrigger)
         #expect(shiftOnly.hasKeyboardTrigger)
+        #expect(shiftOnly.isValidTrigger)
         #expect(keyOnly.hasKeyboardTrigger)
+        #expect(keyOnly.isValidTrigger)
+
+        let rightClickOnly = ShortcutSetting(
+            keyCode: -1,
+            flags: 0,
+            mouseButton: .right,
+            allowModifierOnly: true
+        )
+        #expect(!rightClickOnly.hasKeyboardTrigger)
+        #expect(!rightClickOnly.isLeftClickOnly)
+        #expect(rightClickOnly.isValidTrigger)
     }
 }

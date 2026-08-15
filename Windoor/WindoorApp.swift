@@ -19,7 +19,7 @@ struct WindoorApp: App {
     }
 }
 
-class AppDelegate: NSObject, NSApplicationDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var statusItem: NSStatusItem?
     var settingsWindow: NSWindow? // ウィンドウの参照を保持
     
@@ -28,26 +28,60 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     func applicationDidFinishLaunching(_ notification: Notification) {
+        ProcessInfo.processInfo.disableAutomaticTermination(
+            "Windoor monitors window interactions while its user interface is hidden."
+        )
         AccessibilityManager.shared.startMonitoring()
-        
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        
-        if let button = statusItem?.button {
-            let icon = NSImage(named: "WindoorMenuBarIcon")
-            icon?.isTemplate = true
-            icon?.size = NSSize(width: 18, height: 18)
-            button.image = icon
-        }
-        
-        updateMenu()
-        
+
         // 言語変更通知を受け取る
         NotificationCenter.default.addObserver(self, selector: #selector(updateMenu), name: .languageDidChange, object: nil)
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(updateStatusItemVisibility),
+            name: .menuBarIconVisibilityDidChange,
+            object: nil
+        )
+
+        updateStatusItemVisibility()
+        openSettings()
+    }
+
+    func applicationShouldHandleReopen(
+        _ sender: NSApplication,
+        hasVisibleWindows flag: Bool
+    ) -> Bool {
+        openSettings()
+        return true
+    }
+
+    @objc private func updateStatusItemVisibility() {
+        guard let settings = AccessibilityManager.shared.settings else { return }
+
+        if settings.showMenuBarIcon {
+            if statusItem == nil {
+                let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+                if let button = item.button {
+                    let icon = NSImage(named: "WindoorMenuBarIcon")
+                    icon?.isTemplate = true
+                    icon?.size = NSSize(width: 18, height: 18)
+                    button.image = icon
+                    button.imagePosition = .imageOnly
+                    button.imageScaling = .scaleProportionallyUpOrDown
+                }
+                statusItem = item
+            }
+            updateMenu()
+        } else if let statusItem {
+            NSStatusBar.system.removeStatusItem(statusItem)
+            self.statusItem = nil
+        }
     }
     
     // メニューの更新（多言語対応のため都度作り直す）
     @objc func updateMenu() {
-        let settings = AccessibilityManager.shared.settings ?? SettingsModel()
+        guard let settings = AccessibilityManager.shared.settings,
+              let statusItem
+        else { return }
         let lang = settings.language
         
         let menu = NSMenu()
@@ -72,10 +106,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         menu.addItem(quitItem)
         
-        statusItem?.menu = menu
+        statusItem.menu = menu
     }
     
     @objc func openSettings() {
+        NSApp.setActivationPolicy(.regular)
+
         // 既にウィンドウが存在する場合は表示するだけ
         if let window = settingsWindow {
             window.makeKeyAndOrderFront(nil)
@@ -100,13 +136,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         window.styleMask = [.titled, .closable, .miniaturizable]
         window.center()
         window.isReleasedWhenClosed = false
-        
-        // 閉じた時のデリゲート処理（もし必要なら）だが、isReleasedWhenClosed = falseなので参照は残る
+        window.delegate = self
         
         self.settingsWindow = window
         
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        guard let closingWindow = notification.object as? NSWindow,
+              closingWindow === settingsWindow
+        else { return }
+
+        DispatchQueue.main.async {
+            NSApp.setActivationPolicy(.accessory)
+        }
     }
     
     @objc func terminateApp() {

@@ -24,14 +24,13 @@ struct WindowHitTestingTests {
 
         let selected = WindowHitTester.frontmostCandidate(
             at: point,
-            candidates: candidates,
-            excludingProcessIdentifier: 999
+            candidates: candidates
         )
 
         #expect(selected?.processIdentifier == 101)
     }
 
-    @Test func ignoresInvisibleAndOwnWindowsWithoutSkippingTheNextVisibleWindow() {
+    @Test func ignoresInvisibleWindowButKeepsFrontmostWindowFromWindoorProcess() {
         let point = CGPoint(x: 100, y: 100)
         let candidates = [
             WindowHitTestCandidate(
@@ -56,11 +55,10 @@ struct WindowHitTestingTests {
 
         let selected = WindowHitTester.frontmostCandidate(
             at: point,
-            candidates: candidates,
-            excludingProcessIdentifier: 999
+            candidates: candidates
         )
 
-        #expect(selected?.processIdentifier == 202)
+        #expect(selected?.processIdentifier == 999)
     }
 
     @Test func ignoresDisplaySizedSystemOverlayButKeepsSmallElevatedPanels() {
@@ -90,7 +88,6 @@ struct WindowHitTestingTests {
         let selected = WindowHitTester.frontmostCandidate(
             at: point,
             candidates: candidates,
-            excludingProcessIdentifier: 999,
             displayFrames: [displayFrame]
         )
 

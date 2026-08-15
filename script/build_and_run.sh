@@ -21,6 +21,10 @@ strip_codesign_detritus() {
   [[ -e "$target" ]] || return 0
   /usr/bin/xattr -dr com.apple.FinderInfo "$target" >/dev/null 2>&1 || true
   /usr/bin/xattr -dr com.apple.ResourceFork "$target" >/dev/null 2>&1 || true
+  # File-provider folders can make a recursive removal stop before it reaches
+  # the package root. Clear the root explicitly as well because codesign checks it.
+  /usr/bin/xattr -d com.apple.FinderInfo "$target" >/dev/null 2>&1 || true
+  /usr/bin/xattr -d com.apple.ResourceFork "$target" >/dev/null 2>&1 || true
 }
 
 strip_codesign_detritus "$ROOT_DIR/icon/Windoor.icon"
@@ -48,6 +52,10 @@ strip_codesign_detritus "$APP_BUNDLE"
 
 open_app() {
   /usr/bin/open -n "$APP_BUNDLE"
+  # Launch Services may restore FinderInfo when opening a bundle from a
+  # file-provider-backed workspace. Leave the built product verifiable.
+  sleep 0.2
+  strip_codesign_detritus "$APP_BUNDLE"
 }
 
 case "$MODE" in
@@ -68,6 +76,7 @@ case "$MODE" in
   --verify|verify)
     open_app
     sleep 1
+    /usr/bin/codesign --verify --deep --strict "$APP_BUNDLE"
     PROCESS_ID="$(pgrep -f -x "$APP_BINARY")"
     [[ -n "$PROCESS_ID" ]]
     echo "Launched $APP_BINARY (PID $PROCESS_ID)"
