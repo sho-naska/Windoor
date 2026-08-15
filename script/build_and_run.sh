@@ -27,6 +27,22 @@ strip_codesign_detritus() {
   /usr/bin/xattr -d com.apple.ResourceFork "$target" >/dev/null 2>&1 || true
 }
 
+verify_signature() {
+  local target="$1"
+  local attempt
+  # A file provider can race with verification by restoring FinderInfo just
+  # after it is cleared. Retry the clear-and-verify pair as one operation.
+  for attempt in 1 2 3 4 5; do
+    strip_codesign_detritus "$target"
+    if /usr/bin/codesign --verify --deep --strict "$target" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 0.1
+  done
+  strip_codesign_detritus "$target"
+  /usr/bin/codesign --verify --deep --strict "$target"
+}
+
 strip_codesign_detritus "$ROOT_DIR/icon/Windoor.icon"
 strip_codesign_detritus "$APP_BUNDLE"
 
@@ -44,8 +60,7 @@ strip_codesign_detritus "$APP_BUNDLE"
 /usr/bin/codesign --force --sign "$SIGNING_IDENTITY" "$APP_BUNDLE"
 # Opening/signing a package can cause FinderInfo to be restored on its root.
 # It is not part of the signature, so clear it once more before verification.
-strip_codesign_detritus "$APP_BUNDLE"
-/usr/bin/codesign --verify --deep --strict "$APP_BUNDLE"
+verify_signature "$APP_BUNDLE"
 # Incremental app bundles can retain their old directory timestamp even when
 # their contents changed. Refresh it so Finder and Quick Look invalidate icons.
 /usr/bin/touch "$APP_BUNDLE"
@@ -76,7 +91,7 @@ case "$MODE" in
   --verify|verify)
     open_app
     sleep 1
-    /usr/bin/codesign --verify --deep --strict "$APP_BUNDLE"
+    verify_signature "$APP_BUNDLE"
     PROCESS_ID="$(pgrep -f -x "$APP_BINARY")"
     [[ -n "$PROCESS_ID" ]]
     echo "Launched $APP_BINARY (PID $PROCESS_ID)"
