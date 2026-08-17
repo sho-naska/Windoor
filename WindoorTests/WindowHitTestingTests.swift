@@ -93,4 +93,39 @@ struct WindowHitTestingTests {
 
         #expect(selected?.processIdentifier == 202)
     }
+
+    @Test func matchesDecoratedAccessibilityFrameToWindowServerPanel() {
+        let windowServerFrame = CGRect(x: 300, y: 180, width: 260, height: 210)
+        let accessibilityFrame = CGRect(x: 298, y: 176, width: 264, height: 218)
+
+        #expect(WindowHitTester.framesLikelyMatch(accessibilityFrame, windowServerFrame))
+    }
+
+    @Test func doesNotMatchLargeUnderlyingParentToSmallFrontPanel() {
+        let frontPanel = CGRect(x: 520, y: 340, width: 220, height: 180)
+        let underlyingParent = CGRect(x: 200, y: 100, width: 1000, height: 760)
+
+        #expect(!WindowHitTester.framesLikelyMatch(underlyingParent, frontPanel))
+    }
+
+    @Test func accessibilityGuideTracksSystemSettingsWindow() {
+        let panelSize = CGSize(width: 440, height: 184)
+        let visibleFrame = CGRect(x: 0, y: 0, width: 1800, height: 1100)
+        let initialSettingsFrame = CGRect(x: 500, y: 520, width: 720, height: 550)
+        let movedSettingsFrame = initialSettingsFrame.offsetBy(dx: 70, dy: -45)
+
+        let initialOrigin = AccessibilityPermissionGuideLayout.panelOrigin(
+            following: initialSettingsFrame,
+            panelSize: panelSize,
+            visibleFrame: visibleFrame
+        )
+        let movedOrigin = AccessibilityPermissionGuideLayout.panelOrigin(
+            following: movedSettingsFrame,
+            panelSize: panelSize,
+            visibleFrame: visibleFrame
+        )
+
+        #expect(movedOrigin.x - initialOrigin.x == 70)
+        #expect(movedOrigin.y - initialOrigin.y == -45)
+    }
 }

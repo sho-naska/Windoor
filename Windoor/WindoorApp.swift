@@ -22,6 +22,7 @@ struct WindoorApp: App {
 class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var statusItem: NSStatusItem?
     var settingsWindow: NSWindow? // ウィンドウの参照を保持
+    private var permissionCoordinator: AccessibilityPermissionCoordinator?
     
     func applicationWillFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -31,10 +32,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         ProcessInfo.processInfo.disableAutomaticTermination(
             "Windoor monitors window interactions while its user interface is hidden."
         )
-        AccessibilityManager.shared.startMonitoring()
+        permissionCoordinator = AccessibilityPermissionCoordinator(
+            accessibilityManager: AccessibilityManager.shared,
+            languageProvider: {
+                AccessibilityManager.shared.settings?.language ?? .system
+            }
+        )
 
         // 言語変更通知を受け取る
         NotificationCenter.default.addObserver(self, selector: #selector(updateMenu), name: .languageDidChange, object: nil)
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(updatePermissionGuideLanguage),
+            name: .languageDidChange,
+            object: nil
+        )
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(updateStatusItemVisibility),
@@ -44,6 +56,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         updateStatusItemVisibility()
         openSettings()
+        permissionCoordinator?.start()
     }
 
     func applicationShouldHandleReopen(
@@ -51,6 +64,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         hasVisibleWindows flag: Bool
     ) -> Bool {
         openSettings()
+        permissionCoordinator?.presentGuideIfNeeded()
         return true
     }
 
@@ -63,7 +77,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 if let button = item.button {
                     let icon = NSImage(named: "WindoorMenuBarIcon")
                     icon?.isTemplate = true
-                    icon?.size = NSSize(width: 18, height: 18)
+                    icon?.size = NSSize(width: 16, height: 16)
                     button.image = icon
                     button.imagePosition = .imageOnly
                     button.imageScaling = .scaleProportionallyUpOrDown
@@ -152,6 +166,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         DispatchQueue.main.async {
             NSApp.setActivationPolicy(.accessory)
         }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        permissionCoordinator?.stop()
+    }
+
+    @objc private func updatePermissionGuideLanguage() {
+        permissionCoordinator?.languageDidChange()
     }
     
     @objc func terminateApp() {

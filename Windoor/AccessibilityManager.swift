@@ -3,7 +3,6 @@ import ApplicationServices
 
 private let axMinSizeAttribute: CFString = "AXMinSize" as CFString
 private let axMaxSizeAttribute: CFString = "AXMaxSize" as CFString
-private let windowFrameMatchTolerance: CGFloat = 64
 
 /// A window from `CGWindowListCopyWindowInfo`, which is already ordered front-to-back.
 struct WindowHitTestCandidate {
@@ -24,6 +23,36 @@ enum WindowHitTester {
                 !isDisplaySizedOverlay(candidate, displayFrames: displayFrames) &&
                 candidate.frame.contains(location)
         }
+    }
+
+    static func framesLikelyMatch(_ accessibilityFrame: CGRect, _ windowServerFrame: CGRect) -> Bool {
+        guard accessibilityFrame.width > 0,
+              accessibilityFrame.height > 0,
+              windowServerFrame.width > 0,
+              windowServerFrame.height > 0
+        else { return false }
+
+        let edgeDifference = abs(accessibilityFrame.minX - windowServerFrame.minX) +
+            abs(accessibilityFrame.minY - windowServerFrame.minY) +
+            abs(accessibilityFrame.width - windowServerFrame.width) +
+            abs(accessibilityFrame.height - windowServerFrame.height)
+        if edgeDifference <= 64 { return true }
+
+        let intersection = accessibilityFrame.intersection(windowServerFrame)
+        guard !intersection.isNull, !intersection.isEmpty else { return false }
+
+        let accessibilityArea = accessibilityFrame.width * accessibilityFrame.height
+        let windowServerArea = windowServerFrame.width * windowServerFrame.height
+        let smallerArea = min(accessibilityArea, windowServerArea)
+        let widthRatio = min(accessibilityFrame.width, windowServerFrame.width) /
+            max(accessibilityFrame.width, windowServerFrame.width)
+        let heightRatio = min(accessibilityFrame.height, windowServerFrame.height) /
+            max(accessibilityFrame.height, windowServerFrame.height)
+        let overlapRatio = intersection.width * intersection.height / smallerArea
+
+        // A large parent window may fully contain a small floating panel. Requiring
+        // comparable dimensions prevents that parent from being selected through it.
+        return widthRatio >= 0.65 && heightRatio >= 0.65 && overlapRatio >= 0.75
     }
 
     private static func isDisplaySizedOverlay(
@@ -81,7 +110,16 @@ class AccessibilityManager {
     
     var settings: SettingsModel?
 
-    func startMonitoring() {
+    var isMonitoring: Bool {
+        guard let eventTap, CFMachPortIsValid(eventTap) else { return false }
+        return CGEvent.tapIsEnabled(tap: eventTap)
+    }
+
+    @discardableResult
+    func startMonitoring() -> Bool {
+        stopMonitoring()
+        guard AXIsProcessTrusted() else { return false }
+
         let eventMask = (1 << CGEventType.leftMouseDown.rawValue) |
                         (1 << CGEventType.leftMouseDragged.rawValue) |
                         (1 << CGEventType.leftMouseUp.rawValue) |
@@ -103,7 +141,7 @@ class AccessibilityManager {
             userInfo: nil
         ) else {
             print("イベントタップ作成失敗")
-            return
+            return false
         }
 
         self.eventTap = eventTap
@@ -119,7 +157,7 @@ class AccessibilityManager {
                       (1 << CGEventType.keyUp.rawValue)
 
         if let keyboardTap = CGEvent.tapCreate(
-            tap: .cghidEventTap,
+            tap: .cgSessionEventTap,
             place: .headInsertEventTap,
             options: .defaultTap,
             eventsOfInterest: CGEventMask(keyMask),
@@ -138,6 +176,35 @@ class AccessibilityManager {
             // 失敗してもマウス機能は継続する（ビープ音抑制のみ無効）
             print("キーボードイベントタップ作成失敗（ビープ音抑制は無効）")
         }
+        return true
+    }
+
+    func stopMonitoring() {
+        interactionGeneration &+= 1
+        pendingWindowUpdate = nil
+        isWindowUpdateScheduled = false
+        pressedKeyCodes.removeAll()
+        endAction()
+
+        if let runLoopSource {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
+        }
+        if let eventTap {
+            CGEvent.tapEnable(tap: eventTap, enable: false)
+            CFMachPortInvalidate(eventTap)
+        }
+        if let keyboardRunLoopSource {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), keyboardRunLoopSource, .commonModes)
+        }
+        if let keyboardEventTap {
+            CGEvent.tapEnable(tap: keyboardEventTap, enable: false)
+            CFMachPortInvalidate(keyboardEventTap)
+        }
+
+        runLoopSource = nil
+        eventTap = nil
+        keyboardRunLoopSource = nil
+        keyboardEventTap = nil
     }
 
     private func handleKeyboard(event: CGEvent, type: CGEventType) -> Unmanaged<CGEvent>? {
@@ -533,6 +600,12 @@ class AccessibilityManager {
         // AX hit testing can omit nonstandard panels (such as Quick Look and Adobe color pickers)
         // and report an underlying window instead. Resolve the visually frontmost window first.
         if let cgWindow = frontmostCGWindow(at: location) {
+            if let ownHitElement,
+               let hitWindow = getWindow(from: ownHitElement),
+               window(hitWindow, matchesProcessIdentifier: cgWindow.processIdentifier, frame: cgWindow.frame) {
+                return hitWindow
+            }
+
             // Do not fall through to AX's underlying result when the topmost window is not
             // represented in the accessibility hierarchy.
             return applicationWindow(
@@ -564,13 +637,13 @@ class AccessibilityManager {
             return window
         }
         if let topLevel = copyElementAttribute(kAXTopLevelUIElementAttribute as CFString, from: element),
-           role(of: topLevel) == kAXWindowRole as String {
+           isWindowLike(topLevel) {
             return topLevel
         }
 
         var currentElement = element
         for _ in 0..<64 {
-            if role(of: currentElement) == kAXWindowRole as String {
+            if isWindowLike(currentElement) {
                 return currentElement
             }
             var parent: AnyObject?
@@ -579,6 +652,30 @@ class AccessibilityManager {
             currentElement = parent as! AXUIElement
         }
         return nil
+    }
+
+    private func isWindowLike(_ element: AXUIElement) -> Bool {
+        guard let position = getPosition(element),
+              let size = getSize(element),
+              position.x.isFinite,
+              position.y.isFinite,
+              size.width > 0,
+              size.height > 0
+        else { return false }
+
+        let acceptedRoles = [
+            kAXWindowRole as String,
+            kAXSheetRole as String
+        ]
+        if let role = role(of: element), acceptedRoles.contains(role) {
+            return true
+        }
+
+        var positionSettable = DarwinBoolean(false)
+        var sizeSettable = DarwinBoolean(false)
+        AXUIElementIsAttributeSettable(element, kAXPositionAttribute as CFString, &positionSettable)
+        AXUIElementIsAttributeSettable(element, kAXSizeAttribute as CFString, &sizeSettable)
+        return positionSettable.boolValue || sizeSettable.boolValue
     }
 
     private func role(of element: AXUIElement) -> String? {
@@ -604,14 +701,23 @@ class AccessibilityManager {
         matching preferredFrame: CGRect?
     ) -> AXUIElement? {
         let application = AXUIElementCreateApplication(processIdentifier)
+        var windows: [AXUIElement] = []
         var value: AnyObject?
-        guard AXUIElementCopyAttributeValue(
+        if AXUIElementCopyAttributeValue(
             application,
             kAXWindowsAttribute as CFString,
             &value
         ) == .success,
-              let windows = value as? [AXUIElement]
-        else { return nil }
+           let applicationWindows = value as? [AXUIElement] {
+            windows.append(contentsOf: applicationWindows)
+        }
+
+        for attribute in [kAXFocusedWindowAttribute, kAXMainWindowAttribute] {
+            if let window = copyElementAttribute(attribute as CFString, from: application) {
+                windows.append(window)
+            }
+        }
+        guard !windows.isEmpty else { return nil }
 
         let candidates = windows.compactMap { window -> (AXUIElement, CGRect)? in
             guard let position = getPosition(window), let size = getSize(window) else { return nil }
@@ -623,7 +729,7 @@ class AccessibilityManager {
         if let preferredFrame {
             guard let closest = candidates.min(by: { lhs, rhs in
                 frameDistance(lhs.1, preferredFrame) < frameDistance(rhs.1, preferredFrame)
-            }), frameDistance(closest.1, preferredFrame) <= windowFrameMatchTolerance
+            }), WindowHitTester.framesLikelyMatch(closest.1, preferredFrame)
             else { return nil }
             return closest.0
         }
@@ -633,6 +739,23 @@ class AccessibilityManager {
     private func frameDistance(_ lhs: CGRect, _ rhs: CGRect) -> CGFloat {
         abs(lhs.minX - rhs.minX) + abs(lhs.minY - rhs.minY) +
             abs(lhs.width - rhs.width) + abs(lhs.height - rhs.height)
+    }
+
+    private func window(
+        _ element: AXUIElement,
+        matchesProcessIdentifier expectedProcessIdentifier: pid_t,
+        frame expectedFrame: CGRect
+    ) -> Bool {
+        var processIdentifier: pid_t = 0
+        guard AXUIElementGetPid(element, &processIdentifier) == .success,
+              processIdentifier == expectedProcessIdentifier,
+              let position = getPosition(element),
+              let size = getSize(element)
+        else { return false }
+        return WindowHitTester.framesLikelyMatch(
+            CGRect(origin: position, size: size),
+            expectedFrame
+        )
     }
 
     private func frontmostCGWindow(at location: CGPoint) -> (processIdentifier: pid_t, frame: CGRect)? {
