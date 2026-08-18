@@ -270,11 +270,10 @@ class AccessibilityManager {
         precondition(Thread.isMainThread)
         guard !isRecoveringFromTapTimeout else { return false }
         stopMonitoringInternal(cancelTimeoutRecovery: false)
-        // This is the sole synchronous trust check in the manager. It runs before
-        // either Event Tap exists, so it cannot withhold system input.
-        let isTrusted = AXIsProcessTrusted()
-        cachedAccessibilityPermissionState = isTrusted
-        guard isTrusted else { return false }
+        // The coordinator performs the TCC query on its dedicated utility queue
+        // and updates this cache before starting monitoring. Re-querying TCC here
+        // can block the main run loop while macOS is applying a permission change.
+        guard cachedAccessibilityPermissionState else { return false }
 
         // The system-wide element sets the default timeout for every AX element
         // used by this process. Without this, one hung target application can hold
