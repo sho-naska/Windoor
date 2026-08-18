@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @ObservedObject var settings: SettingsModel
+    @ObservedObject var permissionCoordinator: AccessibilityPermissionCoordinator
     @State private var showQuitAlert = false
     
     private func t(_ key: String) -> String {
@@ -9,21 +10,36 @@ struct SettingsView: View {
     }
     
     var body: some View {
-        VStack(spacing: 0) {
-            Divider()
-            
-            ScrollView {
-                SettingsContent(settings: settings)
+        ZStack {
+            VStack(spacing: 0) {
+                Divider()
+
+                ScrollView {
+                    SettingsContent(settings: settings)
+                }
+                .onChange(of: settings.language) {
+                    updateWindowTitle()
+                }
+                .onAppear {
+                    updateWindowTitle()
+                }
+
+                footerArea
             }
-            .onChange(of: settings.language) {
-                updateWindowTitle()
+            .blur(radius: permissionCoordinator.isTrusted ? 0 : 8)
+            .disabled(!permissionCoordinator.isTrusted)
+            .allowsHitTesting(permissionCoordinator.isTrusted)
+            .accessibilityHidden(!permissionCoordinator.isTrusted)
+
+            if !permissionCoordinator.isTrusted {
+                Button(t("accessibilityPermissionOpenSettings")) {
+                    permissionCoordinator.openAccessibilitySettings()
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
             }
-            .onAppear {
-                updateWindowTitle()
-            }
-            
-            footerArea
         }
+        .animation(.easeInOut(duration: 0.18), value: permissionCoordinator.isTrusted)
         .frame(width: WindoorDesign.Layout.settingsWidth)
     }
     

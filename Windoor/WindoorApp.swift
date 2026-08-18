@@ -36,6 +36,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             accessibilityManager: AccessibilityManager.shared,
             languageProvider: {
                 AccessibilityManager.shared.settings?.language ?? .system
+            },
+            onPermissionMissing: { [weak self] in
+                self?.openSettings()
             }
         )
 
@@ -64,7 +67,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         hasVisibleWindows flag: Bool
     ) -> Bool {
         openSettings()
-        permissionCoordinator?.presentGuideIfNeeded()
+        permissionCoordinator?.refreshPermissionState()
         return true
     }
 
@@ -77,7 +80,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 if let button = item.button {
                     let icon = NSImage(named: "WindoorMenuBarIcon")
                     icon?.isTemplate = true
-                    icon?.size = NSSize(width: 16, height: 16)
+                    icon?.size = NSSize(width: 12, height: 12)
                     button.image = icon
                     button.imagePosition = .imageOnly
                     button.imageScaling = .scaleProportionallyUpOrDown
@@ -135,7 +138,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         
         // 新しく作成
         let settings = AccessibilityManager.shared.settings ?? SettingsModel()
-        let hostingController = NSHostingController(rootView: SettingsView(settings: settings))
+        guard let permissionCoordinator else { return }
+        let hostingController = NSHostingController(
+            rootView: SettingsView(
+                settings: settings,
+                permissionCoordinator: permissionCoordinator
+            )
+        )
         
         let window = NSWindow(contentViewController: hostingController)
         let title = LocalizationManager.shared.text("windowTitle", language: settings.language)
@@ -172,7 +181,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         permissionCoordinator?.stop()
     }
 
-    @objc private func updatePermissionGuideLanguage() {
+    @MainActor @objc private func updatePermissionGuideLanguage() {
         permissionCoordinator?.languageDidChange()
     }
     

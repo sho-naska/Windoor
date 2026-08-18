@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import CoreGraphics
 import Testing
 @testable import Windoor
@@ -108,8 +109,86 @@ struct WindowHitTestingTests {
         #expect(!WindowHitTester.framesLikelyMatch(underlyingParent, frontPanel))
     }
 
+    @Test func staleEventTapCallbackPassesEventsAndIgnoresDisabledNotifications() {
+        let realEventDecision = EventTapCallbackPolicy.decision(
+            callbackGeneration: 40,
+            currentGeneration: 41,
+            acceptsEvents: true,
+            isTrusted: true,
+            isDisabledNotification: false
+        )
+        let disabledNotificationDecision = EventTapCallbackPolicy.decision(
+            callbackGeneration: 40,
+            currentGeneration: 41,
+            acceptsEvents: true,
+            isTrusted: true,
+            isDisabledNotification: true
+        )
+
+        #expect(realEventDecision == .passThrough)
+        #expect(disabledNotificationDecision == .ignoreDisabledNotification)
+    }
+
+    @Test func currentEventTapCallbackReportsPermissionLossWhenUntrusted() {
+        let decision = EventTapCallbackPolicy.decision(
+            callbackGeneration: 41,
+            currentGeneration: 41,
+            acceptsEvents: true,
+            isTrusted: false,
+            isDisabledNotification: false
+        )
+
+        #expect(decision == .permissionLost)
+    }
+
+    @Test func trustedEventTapCallbackRebuildsOnlyForDisabledNotification() {
+        let disabledNotificationDecision = EventTapCallbackPolicy.decision(
+            callbackGeneration: 41,
+            currentGeneration: 41,
+            acceptsEvents: true,
+            isTrusted: true,
+            isDisabledNotification: true
+        )
+        let realEventDecision = EventTapCallbackPolicy.decision(
+            callbackGeneration: 41,
+            currentGeneration: 41,
+            acceptsEvents: true,
+            isTrusted: true,
+            isDisabledNotification: false
+        )
+
+        #expect(disabledNotificationDecision == .rebuild)
+        #expect(realEventDecision == .handle)
+    }
+
+    @Test func windowFrontingRetriesWhenRaiseFailsAfterSuccessfulActivation() {
+        #expect(WindowFrontingPolicy.shouldRetry(
+            frontmostResult: .success,
+            raiseResult: .cannotComplete
+        ))
+        #expect(!WindowFrontingPolicy.shouldRetry(
+            frontmostResult: .success,
+            raiseResult: .success
+        ))
+    }
+
+    @Test func windowFrontingDoesNotRetryUnsupportedOperations() {
+        #expect(!WindowFrontingPolicy.shouldRetry(
+            frontmostResult: .attributeUnsupported,
+            raiseResult: .success
+        ))
+        #expect(!WindowFrontingPolicy.shouldRetry(
+            frontmostResult: .success,
+            raiseResult: .actionUnsupported
+        ))
+        #expect(WindowFrontingPolicy.shouldRetry(
+            frontmostResult: .failure,
+            raiseResult: .success
+        ))
+    }
+
     @Test func accessibilityGuideTracksSystemSettingsWindow() {
-        let panelSize = CGSize(width: 440, height: 184)
+        let panelSize = CGSize(width: 440, height: 136)
         let visibleFrame = CGRect(x: 0, y: 0, width: 1800, height: 1100)
         let initialSettingsFrame = CGRect(x: 500, y: 520, width: 720, height: 550)
         let movedSettingsFrame = initialSettingsFrame.offsetBy(dx: 70, dy: -45)
@@ -127,5 +206,27 @@ struct WindowHitTestingTests {
 
         #expect(movedOrigin.x - initialOrigin.x == 70)
         #expect(movedOrigin.y - initialOrigin.y == -45)
+    }
+
+    @Test func accessibilityGuideMovesFurtherInsideWindowToAvoidDock() {
+        let panelSize = CGSize(width: 440, height: 136)
+        let visibleFrame = CGRect(x: 0, y: 120, width: 1800, height: 980)
+        let settingsFrame = CGRect(x: 500, y: 180, width: 720, height: 700)
+
+        let origin = AccessibilityPermissionGuideLayout.panelOrigin(
+            following: settingsFrame,
+            panelSize: panelSize,
+            visibleFrame: visibleFrame
+        )
+
+        #expect(origin.y == visibleFrame.minY + 8)
+        #expect(origin.y + panelSize.height > settingsFrame.minY)
+    }
+
+    @Test func accessibilityGuideRecognizesLocalizedAccessibilityPages() {
+        #expect(AccessibilityPermissionGuideLayout.isAccessibilityPage(title: "Accessibility"))
+        #expect(AccessibilityPermissionGuideLayout.isAccessibilityPage(title: "アクセシビリティ"))
+        #expect(AccessibilityPermissionGuideLayout.isAccessibilityPage(title: "Bedienungshilfen"))
+        #expect(!AccessibilityPermissionGuideLayout.isAccessibilityPage(title: "Privacy & Security"))
     }
 }

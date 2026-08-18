@@ -217,6 +217,13 @@ struct WindowInteractionEngineTests {
         }
     }
 
+    @Test func resizeAnchorReportsWhenAXPositionMustMove() {
+        #expect(!ResizeAnchorTransform(anchor: .topLeft).requiresPositionUpdate)
+        #expect(ResizeAnchorTransform(anchor: .topRight).requiresPositionUpdate)
+        #expect(ResizeAnchorTransform(anchor: .bottomLeft).requiresPositionUpdate)
+        #expect(ResizeAnchorTransform(anchor: .bottomRight).requiresPositionUpdate)
+    }
+
     @Test func mouseOnlyShortcutIsNotAKeyboardTrigger() {
         let mouseOnly = ShortcutSetting(
             keyCode: -1,

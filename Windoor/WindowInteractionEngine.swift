@@ -68,6 +68,12 @@ enum ResizeAnchorCorner: Equatable {
 struct ResizeAnchorTransform {
     let anchor: ResizeAnchorCorner
 
+    /// AXSize preserves the top-left origin. Anchors on the right or bottom also
+    /// require AXPosition to move the origin after each size change.
+    var requiresPositionUpdate: Bool {
+        reflectsHorizontally || reflectsVertically
+    }
+
     private var reflectsHorizontally: Bool {
         anchor == .topRight || anchor == .bottomRight
     }

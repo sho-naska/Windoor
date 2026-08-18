@@ -113,7 +113,7 @@ struct WindoorTests {
         #expect(localization.text("showMenuBarIcon", language: .japanese) == "メニューバーアイコンを表示")
         #expect(localization.text("leftClickOnlyWarning", language: .japanese) == "左クリックのみに設定することはできません")
         #expect(localization.text("accessibilityPermissionTitle", language: .japanese) == "アクセシビリティを許可")
-        #expect(localization.text("accessibilityPermissionOpenSettings", language: .japanese) == "システム設定を開く")
+        #expect(localization.text("accessibilityPermissionOpenSettings", language: .japanese) == "アクセシビリティ設定を開く")
     }
 
 }
