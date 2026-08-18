@@ -34,11 +34,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         if let button = statusItem?.button {
             let icon = NSImage(named: "WindoorMenuBarIcon")
-            icon?.isTemplate = true
-            icon?.size = NSSize(width: 14, height: 14)
-            button.image = icon
+            let menuBarIcon = NSImage(size: NSSize(width: 22, height: 22), flipped: false) { _ in
+                icon?.draw(
+                    in: NSRect(x: 1, y: 1, width: 20, height: 20),
+                    from: .zero,
+                    operation: .sourceOver,
+                    fraction: 1
+                )
+                return true
+            }
+            menuBarIcon.isTemplate = true
+            button.image = menuBarIcon
             button.imagePosition = .imageOnly
-            button.imageScaling = .scaleProportionallyUpOrDown
+            button.imageScaling = .scaleNone
         }
         
         updateMenu()
