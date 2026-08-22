@@ -54,6 +54,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // 言語変更通知を受け取る
         NotificationCenter.default.addObserver(self, selector: #selector(updateMenu), name: .languageDidChange, object: nil)
     }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        AccessibilityManager.shared.stopMonitoring()
+    }
     
     // メニューの更新（多言語対応のため都度作り直す）
     @objc func updateMenu() {

@@ -14,6 +14,10 @@ private struct PendingWindowUpdate {
 
 class AccessibilityManager {
     static let shared = AccessibilityManager()
+
+    private let permissionCheckInterval: TimeInterval = 0.25
+    private var permissionCheckTimer: Timer?
+    private var isEventTapDeactivationScheduled = false
     
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
@@ -45,6 +49,39 @@ class AccessibilityManager {
     var settings: SettingsModel?
 
     func startMonitoring() {
+        if permissionCheckTimer == nil {
+            let timer = Timer(timeInterval: permissionCheckInterval, repeats: true) { [weak self] _ in
+                self?.refreshMonitoringForAccessibilityPermission()
+            }
+            RunLoop.main.add(timer, forMode: .common)
+            permissionCheckTimer = timer
+        }
+
+        refreshMonitoringForAccessibilityPermission()
+    }
+
+    func stopMonitoring() {
+        permissionCheckTimer?.invalidate()
+        permissionCheckTimer = nil
+        deactivateEventTaps()
+    }
+
+    private func refreshMonitoringForAccessibilityPermission() {
+        if AXIsProcessTrusted() {
+            guard eventTap == nil, keyboardEventTap == nil else { return }
+            installEventTaps()
+        } else {
+            failOpenForAccessibilityPermissionLoss()
+        }
+    }
+
+    private func installEventTaps() {
+        // Permission can change between the periodic check and tap creation.
+        guard AXIsProcessTrusted() else {
+            failOpenForAccessibilityPermissionLoss()
+            return
+        }
+
         let eventMask = (1 << CGEventType.leftMouseDown.rawValue) |
                         (1 << CGEventType.leftMouseDragged.rawValue) |
                         (1 << CGEventType.leftMouseUp.rawValue) |
@@ -72,7 +109,7 @@ class AccessibilityManager {
         self.eventTap = eventTap
         self.runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, eventTap, 0)
         if let runLoopSource = self.runLoopSource {
-            CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, .commonModes)
+            CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
         }
         CGEvent.tapEnable(tap: eventTap, enable: true)
 
@@ -94,7 +131,7 @@ class AccessibilityManager {
             self.keyboardEventTap = keyboardTap
             self.keyboardRunLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, keyboardTap, 0)
             if let keyboardRunLoopSource = self.keyboardRunLoopSource {
-                CFRunLoopAddSource(CFRunLoopGetCurrent(), keyboardRunLoopSource, .commonModes)
+                CFRunLoopAddSource(CFRunLoopGetMain(), keyboardRunLoopSource, .commonModes)
             }
             CGEvent.tapEnable(tap: keyboardTap, enable: true)
         } else {
@@ -103,7 +140,77 @@ class AccessibilityManager {
         }
     }
 
+    /// Accessibility can be revoked while an active event tap is filtering input.
+    /// Disable both taps immediately so the system input stream is never held up,
+    /// then tear their run-loop sources down after the current callback returns.
+    private func failOpenForAccessibilityPermissionLoss() {
+        let hadEventTaps = eventTap != nil || keyboardEventTap != nil
+        let hadPendingInteraction = targetedElement != nil || pendingWindowUpdate != nil
+        guard hadEventTaps || hadPendingInteraction else { return }
+
+        if let eventTap {
+            CGEvent.tapEnable(tap: eventTap, enable: false)
+        }
+        if let keyboardEventTap {
+            CGEvent.tapEnable(tap: keyboardEventTap, enable: false)
+        }
+        cancelPendingInteraction()
+
+        guard hadEventTaps, !isEventTapDeactivationScheduled
+        else { return }
+
+        isEventTapDeactivationScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.deactivateEventTaps()
+            self.isEventTapDeactivationScheduled = false
+        }
+    }
+
+    private func deactivateEventTaps() {
+        if let eventTap {
+            CGEvent.tapEnable(tap: eventTap, enable: false)
+        }
+        if let keyboardEventTap {
+            CGEvent.tapEnable(tap: keyboardEventTap, enable: false)
+        }
+
+        if let runLoopSource {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
+            CFRunLoopSourceInvalidate(runLoopSource)
+        }
+        if let keyboardRunLoopSource {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), keyboardRunLoopSource, .commonModes)
+            CFRunLoopSourceInvalidate(keyboardRunLoopSource)
+        }
+        if let eventTap {
+            CFMachPortInvalidate(eventTap)
+        }
+        if let keyboardEventTap {
+            CFMachPortInvalidate(keyboardEventTap)
+        }
+
+        eventTap = nil
+        runLoopSource = nil
+        keyboardEventTap = nil
+        keyboardRunLoopSource = nil
+        cancelPendingInteraction()
+    }
+
+    private func cancelPendingInteraction() {
+        interactionGeneration &+= 1
+        pendingWindowUpdate = nil
+        isWindowUpdateScheduled = false
+        pressedKeyCodes.removeAll()
+        endAction()
+    }
+
     private func handleKeyboard(event: CGEvent, type: CGEventType) -> Unmanaged<CGEvent>? {
+        guard AXIsProcessTrusted() else {
+            failOpenForAccessibilityPermissionLoss()
+            return Unmanaged.passUnretained(event)
+        }
+
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             if let keyboardEventTap = keyboardEventTap {
                 CGEvent.tapEnable(tap: keyboardEventTap, enable: true)
@@ -158,6 +265,11 @@ class AccessibilityManager {
     }
 
     private func handle(event: CGEvent, type: CGEventType) -> Unmanaged<CGEvent>? {
+        guard AXIsProcessTrusted() else {
+            failOpenForAccessibilityPermissionLoss()
+            return Unmanaged.passUnretained(event)
+        }
+
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             if let eventTap = eventTap {
                 CGEvent.tapEnable(tap: eventTap, enable: true)
@@ -348,6 +460,10 @@ class AccessibilityManager {
 
     private func applyPendingWindowUpdate() {
         isWindowUpdateScheduled = false
+        guard AXIsProcessTrusted() else {
+            failOpenForAccessibilityPermissionLoss()
+            return
+        }
         guard let update = pendingWindowUpdate else { return }
         pendingWindowUpdate = nil
         guard update.generation == interactionGeneration else { return }
