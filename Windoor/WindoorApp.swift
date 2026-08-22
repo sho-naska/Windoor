@@ -19,7 +19,7 @@ struct WindoorApp: App {
     }
 }
 
-class AppDelegate: NSObject, NSApplicationDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var statusItem: NSStatusItem?
     var settingsWindow: NSWindow? // ウィンドウの参照を保持
     
@@ -29,9 +29,27 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         AccessibilityManager.shared.startMonitoring()
-        
+
+        updateStatusItemVisibility()
+
+        // 言語・メニューバーアイコン表示設定の変更を受け取る
+        NotificationCenter.default.addObserver(self, selector: #selector(updateMenu), name: .languageDidChange, object: nil)
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(updateStatusItemVisibility),
+            name: .menuBarIconVisibilityDidChange,
+            object: nil
+        )
+
+        DispatchQueue.main.async { [weak self] in
+            self?.openSettings()
+        }
+    }
+
+    private func installStatusItemIfNeeded() {
+        guard statusItem == nil else { return }
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        
+
         if let button = statusItem?.button {
             let icon = NSImage(named: "WindoorMenuBarIcon")
             let menuBarIcon = NSImage(size: NSSize(width: 22, height: 22), flipped: false) { _ in
@@ -48,11 +66,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             button.imagePosition = .imageOnly
             button.imageScaling = .scaleNone
         }
-        
+
         updateMenu()
-        
-        // 言語変更通知を受け取る
-        NotificationCenter.default.addObserver(self, selector: #selector(updateMenu), name: .languageDidChange, object: nil)
+    }
+
+    @objc private func updateStatusItemVisibility() {
+        let shouldShow = AccessibilityManager.shared.settings?.showMenuBarIcon ?? true
+        if shouldShow {
+            installStatusItemIfNeeded()
+        } else if let statusItem {
+            NSStatusBar.system.removeStatusItem(statusItem)
+            self.statusItem = nil
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -61,6 +86,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     // メニューの更新（多言語対応のため都度作り直す）
     @objc func updateMenu() {
+        guard statusItem != nil else { return }
         let settings = AccessibilityManager.shared.settings ?? SettingsModel()
         let lang = settings.language
         
@@ -90,8 +116,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     @objc func openSettings() {
+        NSApp.setActivationPolicy(.regular)
+
         // 既にウィンドウが存在する場合は表示するだけ
         if let window = settingsWindow {
+            if window.isMiniaturized {
+                window.deminiaturize(nil)
+            }
             window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
@@ -114,13 +145,27 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         window.styleMask = [.titled, .closable, .miniaturizable]
         window.center()
         window.isReleasedWhenClosed = false
-        
-        // 閉じた時のデリゲート処理（もし必要なら）だが、isReleasedWhenClosed = falseなので参照は残る
+        window.delegate = self
         
         self.settingsWindow = window
         
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func applicationShouldHandleReopen(
+        _ sender: NSApplication,
+        hasVisibleWindows flag: Bool
+    ) -> Bool {
+        openSettings()
+        return true
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        guard notification.object as? NSWindow === settingsWindow else { return }
+        DispatchQueue.main.async {
+            NSApp.setActivationPolicy(.accessory)
+        }
     }
     
     @objc func terminateApp() {

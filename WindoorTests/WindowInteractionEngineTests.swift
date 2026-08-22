@@ -125,6 +125,41 @@ struct WindowInteractionEngineTests {
         #expect(outside.width == 90)
     }
 
+    @Test func resizeKeepsEachSelectedAnchorFixed() {
+        let initialFrame = CGRect(x: 10, y: 20, width: 100, height: 80)
+        let initialPointer = CGPoint(x: 60, y: 60)
+        let draggedPointer = CGPoint(x: 80, y: 70)
+
+        let expectations: [(ResizeAnchorCorner, CGRect)] = [
+            (.topLeft, CGRect(x: 10, y: 20, width: 120, height: 90)),
+            (.topRight, CGRect(x: 30, y: 20, width: 80, height: 90)),
+            (.bottomLeft, CGRect(x: 10, y: 30, width: 120, height: 70)),
+            (.bottomRight, CGRect(x: 30, y: 30, width: 80, height: 70))
+        ]
+
+        for (anchor, expectedFrame) in expectations {
+            var engine = WindowInteractionEngine(
+                mode: .resize,
+                initialFrame: initialFrame,
+                initialPointer: initialPointer,
+                obstacleFrames: [],
+                timestamp: 0,
+                resizeAnchorCorner: anchor
+            )
+            let frame = engine.frame(for: draggedPointer, timestamp: 0.1, constraint: .none)
+            #expect(frame == expectedFrame)
+            #expect(anchor.point(in: frame) == anchor.point(in: initialFrame))
+        }
+    }
+
+    @Test func dynamicResizeAnchorsUseNearestCornerAndItsOpposite() {
+        let frame = CGRect(x: 10, y: 20, width: 100, height: 80)
+        let pointer = CGPoint(x: 100, y: 90)
+
+        #expect(ResizeAnchorPoint.nearestCorner.resolvedCorner(in: frame, pointer: pointer) == .bottomRight)
+        #expect(ResizeAnchorPoint.farthestCorner.resolvedCorner(in: frame, pointer: pointer) == .topLeft)
+    }
+
     @Test func axisConstraintUsesOriginalDragOrigin() {
         var engine = WindowInteractionEngine(
             mode: .move,
@@ -162,7 +197,9 @@ struct WindowInteractionEngineTests {
         )
 
         #expect(!mouseOnly.hasKeyboardTrigger)
+        #expect(mouseOnly.isLeftClickOnly)
         #expect(shiftOnly.hasKeyboardTrigger)
+        #expect(!shiftOnly.isLeftClickOnly)
         #expect(keyOnly.hasKeyboardTrigger)
     }
 }

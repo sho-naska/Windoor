@@ -7,6 +7,81 @@ enum DragAxisConstraint: Equatable {
     case vertical
 }
 
+enum ResizeAnchorCorner: CaseIterable, Equatable {
+    case topLeft
+    case topRight
+    case bottomLeft
+    case bottomRight
+
+    var opposite: ResizeAnchorCorner {
+        switch self {
+        case .topLeft: return .bottomRight
+        case .topRight: return .bottomLeft
+        case .bottomLeft: return .topRight
+        case .bottomRight: return .topLeft
+        }
+    }
+
+    func point(in frame: CGRect) -> CGPoint {
+        switch self {
+        case .topLeft: return CGPoint(x: frame.minX, y: frame.minY)
+        case .topRight: return CGPoint(x: frame.maxX, y: frame.minY)
+        case .bottomLeft: return CGPoint(x: frame.minX, y: frame.maxY)
+        case .bottomRight: return CGPoint(x: frame.maxX, y: frame.maxY)
+        }
+    }
+
+    func frame(size: CGSize, anchoredIn frame: CGRect) -> CGRect {
+        let origin: CGPoint
+        switch self {
+        case .topLeft:
+            origin = CGPoint(x: frame.minX, y: frame.minY)
+        case .topRight:
+            origin = CGPoint(x: frame.maxX - size.width, y: frame.minY)
+        case .bottomLeft:
+            origin = CGPoint(x: frame.minX, y: frame.maxY - size.height)
+        case .bottomRight:
+            origin = CGPoint(x: frame.maxX - size.width, y: frame.maxY - size.height)
+        }
+        return CGRect(origin: origin, size: size)
+    }
+
+    fileprivate func anchorsMinimumEdge(on axis: WindowInteractionEngine.Axis) -> Bool {
+        switch (self, axis) {
+        case (.topLeft, _): return true
+        case (.topRight, .horizontal): return false
+        case (.topRight, .vertical): return true
+        case (.bottomLeft, .horizontal): return true
+        case (.bottomLeft, .vertical): return false
+        case (.bottomRight, _): return false
+        }
+    }
+}
+
+extension ResizeAnchorPoint {
+    func resolvedCorner(in frame: CGRect, pointer: CGPoint) -> ResizeAnchorCorner {
+        switch self {
+        case .topLeft:
+            return .topLeft
+        case .topRight:
+            return .topRight
+        case .bottomLeft:
+            return .bottomLeft
+        case .bottomRight:
+            return .bottomRight
+        case .nearestCorner, .farthestCorner:
+            let nearest = ResizeAnchorCorner.allCases.min { lhs, rhs in
+                let lhsPoint = lhs.point(in: frame)
+                let rhsPoint = rhs.point(in: frame)
+                let lhsDistance = hypot(pointer.x - lhsPoint.x, pointer.y - lhsPoint.y)
+                let rhsDistance = hypot(pointer.x - rhsPoint.x, pointer.y - rhsPoint.y)
+                return lhsDistance < rhsDistance
+            } ?? .topLeft
+            return self == .nearestCorner ? nearest : nearest.opposite
+        }
+    }
+}
+
 struct EdgeResistanceConfiguration: Equatable {
     /// Pointer speeds above this value pass through neighboring edges without resistance.
     var slowVelocityThreshold: CGFloat = 500
@@ -25,7 +100,7 @@ struct EdgeResistanceConfiguration: Equatable {
 /// Pure geometry/state engine for a Windoor drag. It intentionally does not know about AXUIElement,
 /// so edge resistance and axis constraints can be tested without controlling another application.
 struct WindowInteractionEngine {
-    private enum Axis {
+    fileprivate enum Axis {
         case horizontal
         case vertical
     }
@@ -54,6 +129,7 @@ struct WindowInteractionEngine {
     let initialPointer: CGPoint
     let obstacleFrames: [CGRect]
     let configuration: EdgeResistanceConfiguration
+    let resizeAnchorCorner: ResizeAnchorCorner
 
     private var horizontalState = AxisState()
     private var verticalState = AxisState()
@@ -71,6 +147,7 @@ struct WindowInteractionEngine {
         initialPointer: CGPoint,
         obstacleFrames: [CGRect],
         timestamp: TimeInterval,
+        resizeAnchorCorner: ResizeAnchorCorner = .topLeft,
         configuration: EdgeResistanceConfiguration = .standard
     ) {
         self.mode = mode
@@ -78,6 +155,7 @@ struct WindowInteractionEngine {
         self.initialPointer = initialPointer
         self.obstacleFrames = obstacleFrames
         self.configuration = configuration
+        self.resizeAnchorCorner = resizeAnchorCorner
         self.lastPointer = initialPointer
         self.lastTimestamp = timestamp
         self.currentFrame = initialFrame
@@ -116,8 +194,18 @@ struct WindowInteractionEngine {
             proposed.origin.x += pointerDelta.x - horizontalState.consumedPointerTravel
             proposed.origin.y += pointerDelta.y - verticalState.consumedPointerTravel
         case .resize:
-            proposed.size.width += pointerDelta.x - horizontalState.consumedPointerTravel
-            proposed.size.height += pointerDelta.y - verticalState.consumedPointerTravel
+            setValue(
+                value(in: initialFrame, axis: .horizontal) +
+                    pointerDelta.x - horizontalState.consumedPointerTravel,
+                in: &proposed,
+                axis: .horizontal
+            )
+            setValue(
+                value(in: initialFrame, axis: .vertical) +
+                    pointerDelta.y - verticalState.consumedPointerTravel,
+                in: &proposed,
+                axis: .vertical
+            )
         case .error, .none:
             return currentFrame
         }
@@ -285,10 +373,8 @@ struct WindowInteractionEngine {
                 let length = axis == .horizontal ? proposedFrame.width : proposedFrame.height
                 lockedValue = direction > 0 ? edge - length : edge
             } else {
-                let origin = axis == .horizontal ? proposedFrame.minX : proposedFrame.minY
-                lockedValue = edge - origin
+                lockedValue = edge
             }
-            guard lockedValue > 0 || mode == .move else { continue }
             contacts.append((edge, lockedValue))
         }
 
@@ -310,7 +396,10 @@ struct WindowInteractionEngine {
 
     private func movingEdge(of frame: CGRect, axis: Axis, direction: CGFloat) -> CGFloat {
         if mode == .resize {
-            return axis == .horizontal ? frame.maxX : frame.maxY
+            if resizeAnchorCorner.anchorsMinimumEdge(on: axis) {
+                return axis == .horizontal ? frame.maxX : frame.maxY
+            }
+            return axis == .horizontal ? frame.minX : frame.minY
         }
         if axis == .horizontal {
             return direction > 0 ? frame.maxX : frame.minX
@@ -322,14 +411,30 @@ struct WindowInteractionEngine {
         if mode == .move {
             return axis == .horizontal ? frame.minX : frame.minY
         }
-        return axis == .horizontal ? frame.width : frame.height
+        return movingEdge(of: frame, axis: axis, direction: 0)
     }
 
     private func setValue(_ value: CGFloat, in frame: inout CGRect, axis: Axis) {
         if mode == .move {
             if axis == .horizontal { frame.origin.x = value } else { frame.origin.y = value }
         } else {
-            if axis == .horizontal { frame.size.width = value } else { frame.size.height = value }
+            let fixedPoint = resizeAnchorCorner.point(in: initialFrame)
+            let anchorsMinimumEdge = resizeAnchorCorner.anchorsMinimumEdge(on: axis)
+            if axis == .horizontal {
+                if anchorsMinimumEdge {
+                    frame.origin.x = fixedPoint.x
+                    frame.size.width = max(1, value - fixedPoint.x)
+                } else {
+                    frame.size.width = max(1, fixedPoint.x - value)
+                    frame.origin.x = fixedPoint.x - frame.size.width
+                }
+            } else if anchorsMinimumEdge {
+                frame.origin.y = fixedPoint.y
+                frame.size.height = max(1, value - fixedPoint.y)
+            } else {
+                frame.size.height = max(1, fixedPoint.y - value)
+                frame.origin.y = fixedPoint.y - frame.size.height
+            }
         }
     }
 

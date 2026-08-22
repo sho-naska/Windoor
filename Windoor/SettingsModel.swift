@@ -16,6 +16,21 @@ enum MouseButton: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+enum ResizeAnchorPoint: String, Codable, CaseIterable, Identifiable {
+    case topLeft
+    case topRight
+    case bottomLeft
+    case bottomRight
+    case nearestCorner
+    case farthestCorner
+
+    var id: String { rawValue }
+
+    func localizedName(lang: AppLanguage) -> String {
+        LocalizationManager.shared.text(rawValue, language: lang)
+    }
+}
+
 // ショートカット設定
 struct ShortcutSetting: Codable, Equatable {
     var keyCode: Int = -1
@@ -90,6 +105,10 @@ struct ShortcutSetting: Codable, Equatable {
         return !NSEvent.ModifierFlags(rawValue: flags).intersection(modifierMask).isEmpty
     }
 
+    var isLeftClickOnly: Bool {
+        mouseButton == .left && !hasKeyboardTrigger
+    }
+
     func isHeld(eventFlags: CGEventFlags, pressedKeyCodes: Set<Int>) -> Bool {
         guard !isEmpty else { return false }
         if keyCode >= 0 {
@@ -105,6 +124,7 @@ struct ShortcutSetting: Codable, Equatable {
 // 言語変更通知用の名前
 extension Notification.Name {
     static let languageDidChange = Notification.Name("languageDidChange")
+    static let menuBarIconVisibilityDidChange = Notification.Name("menuBarIconVisibilityDidChange")
 }
 
 class SettingsModel: ObservableObject {
@@ -136,12 +156,8 @@ class SettingsModel: ObservableObject {
         didSet { save(preserveWindowOrder, key: "preserveWindowOrder") }
     }
 
-    @Published var horizontalConstraintSetting: ShortcutSetting {
-        didSet { save(horizontalConstraintSetting, key: "horizontalConstraintSetting") }
-    }
-
-    @Published var verticalConstraintSetting: ShortcutSetting {
-        didSet { save(verticalConstraintSetting, key: "verticalConstraintSetting") }
+    @Published var resizeAnchorPoint: ResizeAnchorPoint {
+        didSet { save(resizeAnchorPoint, key: "resizeAnchorPoint") }
     }
     
     @Published var language: AppLanguage {
@@ -157,6 +173,8 @@ class SettingsModel: ObservableObject {
             save(moveSetting, key: "moveSetting")
             if !moveSetting.hasKeyboardTrigger {
                 isMoveEnabled = false
+            } else if oldValue.isLeftClickOnly {
+                isMoveEnabled = true
             }
         }
     }
@@ -166,7 +184,16 @@ class SettingsModel: ObservableObject {
             save(resizeSetting, key: "resizeSetting")
             if !resizeSetting.hasKeyboardTrigger {
                 isResizeEnabled = false
+            } else if oldValue.isLeftClickOnly {
+                isResizeEnabled = true
             }
+        }
+    }
+
+    @Published var showMenuBarIcon: Bool {
+        didSet {
+            save(showMenuBarIcon, key: "showMenuBarIcon")
+            NotificationCenter.default.post(name: .menuBarIconVisibilityDidChange, object: nil)
         }
     }
     
@@ -211,21 +238,10 @@ class SettingsModel: ObservableObject {
         self.isResizeEnabled = storedResizeEnabled && loadedResize.hasKeyboardTrigger
         self.recordingTimeout = SettingsModel.loadDouble(key: "recordingTimeout") ?? 1.5
         self.preserveWindowOrder = SettingsModel.loadBool(key: "preserveWindowOrder") ?? false
-
-        let defaultAxisConstraint = ShortcutSetting(
-            keyCode: -1,
-            flags: NSEvent.ModifierFlags.shift.rawValue,
-            mouseButton: .left,
-            allowModifierOnly: true
-        )
-        self.horizontalConstraintSetting = SettingsModel.load(
-            key: "horizontalConstraintSetting",
-            type: ShortcutSetting.self
-        ) ?? defaultAxisConstraint
-        self.verticalConstraintSetting = SettingsModel.load(
-            key: "verticalConstraintSetting",
-            type: ShortcutSetting.self
-        ) ?? defaultAxisConstraint
+        self.resizeAnchorPoint = SettingsModel.load(
+            key: "resizeAnchorPoint",
+            type: ResizeAnchorPoint.self
+        ) ?? .topLeft
         
         if let langData = UserDefaults.standard.data(forKey: "language"),
            let lang = try? JSONDecoder().decode(AppLanguage.self, from: langData) {
@@ -236,6 +252,7 @@ class SettingsModel: ObservableObject {
         
         self.moveSetting = loadedMove
         self.resizeSetting = loadedResize
+        self.showMenuBarIcon = SettingsModel.loadBool(key: "showMenuBarIcon") ?? true
         
         // launchAtLogin 初期値: 保存済みがあればそれを使用、なければシステム状態から取得
         if let stored = SettingsModel.loadBool(key: "launchAtLogin") {

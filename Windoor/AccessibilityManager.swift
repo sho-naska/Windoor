@@ -4,11 +4,15 @@ import ApplicationServices
 private let axMinSizeAttribute: CFString = "AXMinSize" as CFString
 private let axMaxSizeAttribute: CFString = "AXMaxSize" as CFString
 
+private struct CGWindowTarget {
+    let processIdentifier: pid_t
+    let frame: CGRect
+}
+
 private struct PendingWindowUpdate {
     let element: AXUIElement
     let frame: CGRect
     let mode: InteractionMode
-    let resizeAnchor: CGPoint
     let generation: UInt
 }
 
@@ -30,10 +34,9 @@ class AccessibilityManager {
     private var pressedKeyCodes: Set<Int> = []
     
     private var targetedElement: AXUIElement?
-    private var startDragLocation: CGPoint?
-    private var startWindowPosition: CGPoint?
     private var activeMode: InteractionMode = .none
     private var activeMouseButton: MouseButton?
+    private var activeResizeAnchorCorner: ResizeAnchorCorner = .topLeft
     private var minWindowSize: CGSize?
     private var maxWindowSize: CGSize?
     private var interactionEngine: WindowInteractionEngine?
@@ -248,16 +251,7 @@ class AccessibilityManager {
             settings.resizeSetting.keyCode >= 0 &&
             settings.resizeSetting.matches(eventFlags: flags, eventKeyCode: Int64(keyCode))
 
-        let shouldSwallowHorizontalConstraint =
-            settings.horizontalConstraintSetting.keyCode >= 0 &&
-            settings.horizontalConstraintSetting.matches(eventFlags: flags, eventKeyCode: Int64(keyCode))
-
-        let shouldSwallowVerticalConstraint =
-            settings.verticalConstraintSetting.keyCode >= 0 &&
-            settings.verticalConstraintSetting.matches(eventFlags: flags, eventKeyCode: Int64(keyCode))
-
-        if shouldSwallowMove || shouldSwallowResize ||
-            shouldSwallowHorizontalConstraint || shouldSwallowVerticalConstraint {
+        if shouldSwallowMove || shouldSwallowResize {
             return nil
         }
 
@@ -305,8 +299,6 @@ class AccessibilityManager {
                     }
 
                     self.targetedElement = element
-                    self.startDragLocation = location
-                    self.startWindowPosition = startPosition
                     self.lastDragLocation = location
                     self.activeMode = isMoveActive ? .move : .resize
                     self.activeMouseButton = isMoveActive ? settings.moveSetting.mouseButton : settings.resizeSetting.mouseButton
@@ -317,12 +309,18 @@ class AccessibilityManager {
                     self.interactionGeneration &+= 1
 
                     let currentFrame = CGRect(origin: startPosition, size: startSize)
+                    let resizeAnchorCorner = settings.resizeAnchorPoint.resolvedCorner(
+                        in: currentFrame,
+                        pointer: location
+                    )
+                    self.activeResizeAnchorCorner = resizeAnchorCorner
                     self.interactionEngine = WindowInteractionEngine(
                         mode: activeMode,
                         initialFrame: currentFrame,
                         initialPointer: location,
                         obstacleFrames: obstacleFrames(excluding: currentFrame, target: element),
-                        timestamp: timestamp(of: event)
+                        timestamp: timestamp(of: event),
+                        resizeAnchorCorner: resizeAnchorCorner
                     )
 
                     if !settings.preserveWindowOrder {
@@ -339,8 +337,6 @@ class AccessibilityManager {
         // ドラッグ処理
         else if isMouseDragged(type) {
             if let element = targetedElement,
-               let startLocation = startDragLocation,
-               let startPos = startWindowPosition,
                var engine = interactionEngine {
                 
                 guard activeMode != .none, dragEventMatchesActiveButton(type) else {
@@ -348,31 +344,26 @@ class AccessibilityManager {
                 }
                 
                 let location = event.location
-                let constraint = activeAxisConstraint(
-                    settings: settings,
-                    flags: event.flags,
-                    location: location,
-                    startLocation: startLocation
-                )
                 var newFrame = engine.frame(
                     for: location,
                     timestamp: timestamp(of: event),
-                    constraint: constraint
+                    constraint: .none
                 )
                 interactionEngine = engine
                 lastDragLocation = location
 
                 if activeMode == .resize {
-                    newFrame.origin = startPos
-                    newFrame.size = clampSize(newFrame.size)
+                    newFrame = activeResizeAnchorCorner.frame(
+                        size: clampSize(newFrame.size),
+                        anchoredIn: engine.initialFrame
+                    )
                 }
                 scheduleWindowUpdate(
                     element: element,
                     frame: newFrame,
-                    mode: activeMode,
-                    resizeAnchor: startPos
+                    mode: activeMode
                 )
-                scheduleCatchUpTickIfNeeded(element: element, resizeAnchor: startPos)
+                scheduleCatchUpTickIfNeeded(element: element)
                 
                 return nil
             }
@@ -391,10 +382,9 @@ class AccessibilityManager {
     
     private func endAction() {
         targetedElement = nil
-        startDragLocation = nil
-        startWindowPosition = nil
         activeMode = .none
         activeMouseButton = nil
+        activeResizeAnchorCorner = .topLeft
         minWindowSize = nil
         maxWindowSize = nil
         interactionEngine = nil
@@ -407,47 +397,15 @@ class AccessibilityManager {
         TimeInterval(event.timestamp) / 1_000_000_000
     }
 
-    private func activeAxisConstraint(
-        settings: SettingsModel,
-        flags: CGEventFlags,
-        location: CGPoint,
-        startLocation: CGPoint
-    ) -> DragAxisConstraint {
-        let horizontal = settings.horizontalConstraintSetting.isHeld(
-            eventFlags: flags,
-            pressedKeyCodes: pressedKeyCodes
-        )
-        let vertical = settings.verticalConstraintSetting.isHeld(
-            eventFlags: flags,
-            pressedKeyCodes: pressedKeyCodes
-        )
-
-        switch (horizontal, vertical) {
-        case (true, false):
-            return .horizontal
-        case (false, true):
-            return .vertical
-        case (true, true):
-            // Overlapping/subset commands are valid. When both match, lock to the dominant axis.
-            return abs(location.x - startLocation.x) >= abs(location.y - startLocation.y)
-                ? .horizontal
-                : .vertical
-        case (false, false):
-            return .none
-        }
-    }
-
     private func scheduleWindowUpdate(
         element: AXUIElement,
         frame: CGRect,
-        mode: InteractionMode,
-        resizeAnchor: CGPoint
+        mode: InteractionMode
     ) {
         pendingWindowUpdate = PendingWindowUpdate(
             element: element,
             frame: frame,
             mode: mode,
-            resizeAnchor: resizeAnchor,
             generation: interactionGeneration
         )
         guard !isWindowUpdateScheduled else { return }
@@ -475,8 +433,8 @@ class AccessibilityManager {
         case .resize:
             let resized = setSize(update.element, size: update.frame.size)
             // Some cross-platform apps move their frame origin while handling AXSize.
-            // Restoring the original top-left keeps the title-bar traffic lights reachable.
-            _ = setPosition(update.element, position: update.resizeAnchor)
+            // Restore the origin derived from the selected fixed anchor afterwards.
+            _ = setPosition(update.element, position: update.frame.origin)
             succeeded = resized
         case .error, .none:
             succeeded = false
@@ -494,7 +452,7 @@ class AccessibilityManager {
         }
     }
 
-    private func scheduleCatchUpTickIfNeeded(element: AXUIElement, resizeAnchor: CGPoint) {
+    private func scheduleCatchUpTickIfNeeded(element: AXUIElement) {
         guard interactionEngine?.needsCatchUp == true, !isCatchUpTickScheduled else { return }
         let generation = interactionGeneration
         isCatchUpTickScheduled = true
@@ -504,36 +462,29 @@ class AccessibilityManager {
             guard generation == self.interactionGeneration else { return }
             self.isCatchUpTickScheduled = false
             guard self.targetedElement != nil,
-                  let settings = self.settings,
-                  let startLocation = self.startDragLocation,
                   let location = self.lastDragLocation,
                   var engine = self.interactionEngine,
                   engine.needsCatchUp
             else { return }
 
-            let constraint = self.activeAxisConstraint(
-                settings: settings,
-                flags: CGEventSource.flagsState(.combinedSessionState),
-                location: location,
-                startLocation: startLocation
-            )
             var frame = engine.frame(
                 for: location,
                 timestamp: ProcessInfo.processInfo.systemUptime,
-                constraint: constraint
+                constraint: .none
             )
             self.interactionEngine = engine
             if self.activeMode == .resize {
-                frame.origin = resizeAnchor
-                frame.size = self.clampSize(frame.size)
+                frame = self.activeResizeAnchorCorner.frame(
+                    size: self.clampSize(frame.size),
+                    anchoredIn: engine.initialFrame
+                )
             }
             self.scheduleWindowUpdate(
                 element: element,
                 frame: frame,
-                mode: self.activeMode,
-                resizeAnchor: resizeAnchor
+                mode: self.activeMode
             )
-            self.scheduleCatchUpTickIfNeeded(element: element, resizeAnchor: resizeAnchor)
+            self.scheduleCatchUpTickIfNeeded(element: element)
         }
     }
     
@@ -574,28 +525,28 @@ class AccessibilityManager {
     }
     
     private func getElementAtLocation(_ location: CGPoint) -> AXUIElement? {
-        let systemWide = AXUIElementCreateSystemWide()
+        guard let frontmostWindow = frontmostCGWindow(at: location) else { return nil }
+
+        let application = AXUIElementCreateApplication(frontmostWindow.processIdentifier)
         var element: AXUIElement?
-        let result = AXUIElementCopyElementAtPosition(systemWide, Float(location.x), Float(location.y), &element)
-        if result == .success, let element {
-            if let window = getWindow(from: element) {
-                return window
-            }
-
-            var pid: pid_t = 0
-            if AXUIElementGetPid(element, &pid) == .success,
-               let window = applicationWindow(processIdentifier: pid, at: location, matching: nil) {
-                return window
-            }
+        let result = AXUIElementCopyElementAtPosition(
+            application,
+            Float(location.x),
+            Float(location.y),
+            &element
+        )
+        if result == .success,
+           let element,
+           let window = getWindow(from: element),
+           matchesFrontmostWindow(window, target: frontmostWindow) {
+            return window
         }
 
-        return frontmostCGWindow(at: location).flatMap { cgWindow in
-            applicationWindow(
-                processIdentifier: cgWindow.processIdentifier,
-                at: location,
-                matching: cgWindow.frame
-            )
-        }
+        return applicationWindow(
+            processIdentifier: frontmostWindow.processIdentifier,
+            at: location,
+            matching: frontmostWindow.frame
+        )
     }
 
     private func getWindow(from element: AXUIElement) -> AXUIElement? {
@@ -660,11 +611,32 @@ class AccessibilityManager {
         }
 
         if let preferredFrame {
-            return candidates.min { lhs, rhs in
+            guard let closest = candidates.min(by: { lhs, rhs in
                 frameDistance(lhs.1, preferredFrame) < frameDistance(rhs.1, preferredFrame)
-            }?.0
+            }), framesReferToSameWindow(closest.1, preferredFrame)
+            else { return nil }
+            return closest.0
         }
         return candidates.min { $0.1.width * $0.1.height < $1.1.width * $1.1.height }?.0
+    }
+
+    private func matchesFrontmostWindow(_ element: AXUIElement, target: CGWindowTarget) -> Bool {
+        var processIdentifier: pid_t = 0
+        guard AXUIElementGetPid(element, &processIdentifier) == .success,
+              processIdentifier == target.processIdentifier,
+              let position = getPosition(element),
+              let size = getSize(element)
+        else { return false }
+        return framesReferToSameWindow(CGRect(origin: position, size: size), target.frame)
+    }
+
+    private func framesReferToSameWindow(_ lhs: CGRect, _ rhs: CGRect) -> Bool {
+        let originTolerance: CGFloat = 12
+        let sizeTolerance: CGFloat = 24
+        return abs(lhs.minX - rhs.minX) <= originTolerance &&
+            abs(lhs.minY - rhs.minY) <= originTolerance &&
+            abs(lhs.width - rhs.width) <= sizeTolerance &&
+            abs(lhs.height - rhs.height) <= sizeTolerance
     }
 
     private func frameDistance(_ lhs: CGRect, _ rhs: CGRect) -> CGFloat {
@@ -672,21 +644,28 @@ class AccessibilityManager {
             abs(lhs.width - rhs.width) + abs(lhs.height - rhs.height)
     }
 
-    private func frontmostCGWindow(at location: CGPoint) -> (processIdentifier: pid_t, frame: CGRect)? {
+    private func frontmostCGWindow(at location: CGPoint) -> CGWindowTarget? {
         guard let windows = CGWindowListCopyWindowInfo(
             [.optionOnScreenOnly, .excludeDesktopElements],
             kCGNullWindowID
         ) as? [[CFString: Any]] else { return nil }
 
         for window in windows {
-            guard let layer = (window[kCGWindowLayer] as? NSNumber)?.intValue, layer == 0,
-                  let processIdentifierValue = window[kCGWindowOwnerPID] as? NSNumber,
+            guard let processIdentifierValue = window[kCGWindowOwnerPID] as? NSNumber,
+                  let layer = (window[kCGWindowLayer] as? NSNumber)?.intValue,
+                  layer >= NSWindow.Level.normal.rawValue,
+                  layer <= NSWindow.Level.modalPanel.rawValue,
+                  let alpha = (window[kCGWindowAlpha] as? NSNumber)?.doubleValue,
+                  alpha > 0,
                   let frame = cgWindowFrame(from: window),
+                  frame.width > 0,
+                  frame.height > 0,
                   frame.contains(location)
             else { continue }
-            let processIdentifier = processIdentifierValue.int32Value
-            guard processIdentifier != getpid() else { continue }
-            return (processIdentifier, frame)
+            return CGWindowTarget(
+                processIdentifier: processIdentifierValue.int32Value,
+                frame: frame
+            )
         }
         return nil
     }

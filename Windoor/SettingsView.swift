@@ -193,10 +193,30 @@ struct ResizeSettingCard: View {
             canEnable: settings.resizeSetting.hasKeyboardTrigger,
             isEditing: settings.isRecording
         ) {
-            MoveResizeSettingContent(
-                setting: $settings.resizeSetting,
-                settings: settings
-            )
+            VStack(spacing: 16) {
+                MoveResizeSettingContent(
+                    setting: $settings.resizeSetting,
+                    settings: settings
+                )
+
+                Divider()
+
+                HStack(alignment: .center) {
+                    Label(t("anchorPoint"), systemImage: "scope")
+                        .foregroundColor(.secondary)
+                        .frame(width: WindoorDesign.Layout.rowLabelWidth, alignment: .leading)
+
+                    Spacer()
+
+                    Picker("", selection: $settings.resizeAnchorPoint) {
+                        ForEach(ResizeAnchorPoint.allCases) { anchor in
+                            Text(anchor.localizedName(lang: settings.language)).tag(anchor)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: WindoorDesign.Layout.controlColumnWidth)
+                }
+            }
         }
     }
 }
@@ -254,13 +274,22 @@ struct MoveResizeSettingContent: View {
                 
                 Spacer()
                 
-                Picker("", selection: $setting.mouseButton) {
-                    ForEach(MouseButton.allCases) { btn in
-                        Text(btn.localizedName(lang: settings.language)).tag(btn)
+                HStack(spacing: 8) {
+                    if setting.isLeftClickOnly {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.yellow)
+                            .help(t("leftClickOnlyWarning"))
+                            .accessibilityLabel(t("leftClickOnlyWarning"))
                     }
+
+                    Picker("", selection: $setting.mouseButton) {
+                        ForEach(MouseButton.allCases) { btn in
+                            Text(btn.localizedName(lang: settings.language)).tag(btn)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: WindoorDesign.Layout.controlColumnWidth)
                 }
-                .labelsHidden()
-                .frame(width: WindoorDesign.Layout.controlColumnWidth)
             }
         }
     }
@@ -284,10 +313,6 @@ struct DetailSettingCardView: View {
             color: WindoorDesign.Icon.detailColor
         ) {
             VStack(alignment: .leading, spacing: 12) {
-                AxisConstraintSettings(settings: settings)
-
-                Divider()
-                
                 // 長押し時間
                 VStack(alignment: .leading, spacing: 4) {
                     Label(t("longPressDuration"), systemImage: "timer")
@@ -312,71 +337,19 @@ struct DetailSettingCardView: View {
                 .toggleStyle(.checkbox)
 
                 Divider()
+
+                Toggle(isOn: $settings.showMenuBarIcon) {
+                    Text(t("showMenuBarIcon"))
+                }
+                .toggleStyle(.checkbox)
+
+                Divider()
                 
                 // ログイン時自動実行（アイコンなし）
                 Toggle(isOn: $settings.launchAtLogin) {
                     Text(t("launchAtLogin"))
                 }
                 .toggleStyle(.checkbox)
-            }
-        }
-    }
-}
-
-struct AxisConstraintSettings: View {
-    @ObservedObject var settings: SettingsModel
-
-    private func t(_ key: String) -> String {
-        LocalizationManager.shared.text(key, language: settings.language)
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Label(t("axisConstraint"), systemImage: "arrow.left.and.right")
-                .font(.headline)
-
-            Text(t("axisConstraintDesc"))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            axisRow(
-                title: t("horizontalOnly"),
-                icon: "arrow.left.and.right",
-                setting: $settings.horizontalConstraintSetting
-            )
-
-            axisRow(
-                title: t("verticalOnly"),
-                icon: "arrow.up.and.down",
-                setting: $settings.verticalConstraintSetting
-            )
-        }
-    }
-
-    private func axisRow(
-        title: String,
-        icon: String,
-        setting: Binding<ShortcutSetting>
-    ) -> some View {
-        HStack(alignment: .top) {
-            Label(title, systemImage: icon)
-                .foregroundStyle(.secondary)
-                .frame(width: WindoorDesign.Layout.rowLabelWidth, alignment: .leading)
-
-            Spacer()
-
-            VStack(alignment: .leading, spacing: 6) {
-                KeyRecorderButton(
-                    setting: setting,
-                    isGlobalRecording: $settings.isRecording,
-                    timeout: settings.recordingTimeout,
-                    isConflict: false,
-                    language: settings.language
-                )
-                .frame(width: WindoorDesign.Layout.controlColumnWidth)
-
-                Toggle(t("modifierOnly"), isOn: setting.allowModifierOnly)
-                    .toggleStyle(.checkbox)
             }
         }
     }
