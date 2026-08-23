@@ -313,6 +313,10 @@ struct DetailSettingCardView: View {
             color: WindoorDesign.Icon.detailColor
         ) {
             VStack(alignment: .leading, spacing: 12) {
+                AxisConstraintSettings(settings: settings)
+
+                Divider()
+
                 // 長押し時間
                 VStack(alignment: .leading, spacing: 4) {
                     Label(t("longPressDuration"), systemImage: "timer")
@@ -350,6 +354,58 @@ struct DetailSettingCardView: View {
                     Text(t("launchAtLogin"))
                 }
                 .toggleStyle(.checkbox)
+            }
+        }
+    }
+}
+
+struct AxisConstraintSettings: View {
+    @ObservedObject var settings: SettingsModel
+
+    private func t(_ key: String) -> String {
+        LocalizationManager.shared.text(key, language: settings.language)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            axisRow(
+                title: t("horizontalOnly"),
+                icon: "arrow.left.and.right",
+                setting: $settings.horizontalConstraintSetting
+            )
+
+            axisRow(
+                title: t("verticalOnly"),
+                icon: "arrow.up.and.down",
+                setting: $settings.verticalConstraintSetting
+            )
+        }
+    }
+
+    private func axisRow(
+        title: String,
+        icon: String,
+        setting: Binding<ShortcutSetting>
+    ) -> some View {
+        HStack(alignment: .top) {
+            Label(title, systemImage: icon)
+                .foregroundStyle(.secondary)
+                .frame(width: WindoorDesign.Layout.rowLabelWidth, alignment: .leading)
+
+            Spacer()
+
+            VStack(alignment: .leading, spacing: 6) {
+                KeyRecorderButton(
+                    setting: setting,
+                    isGlobalRecording: $settings.isRecording,
+                    timeout: settings.recordingTimeout,
+                    isConflict: false,
+                    language: settings.language
+                )
+                .frame(width: WindoorDesign.Layout.controlColumnWidth)
+
+                Toggle(t("modifierOnly"), isOn: setting.allowModifierOnly)
+                    .toggleStyle(.checkbox)
             }
         }
     }

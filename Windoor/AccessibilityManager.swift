@@ -34,6 +34,7 @@ class AccessibilityManager {
     private var pressedKeyCodes: Set<Int> = []
     
     private var targetedElement: AXUIElement?
+    private var startDragLocation: CGPoint?
     private var activeMode: InteractionMode = .none
     private var activeMouseButton: MouseButton?
     private var activeResizeAnchorCorner: ResizeAnchorCorner = .topLeft
@@ -251,7 +252,16 @@ class AccessibilityManager {
             settings.resizeSetting.keyCode >= 0 &&
             settings.resizeSetting.matches(eventFlags: flags, eventKeyCode: Int64(keyCode))
 
-        if shouldSwallowMove || shouldSwallowResize {
+        let shouldSwallowHorizontalConstraint =
+            settings.horizontalConstraintSetting.keyCode >= 0 &&
+            settings.horizontalConstraintSetting.matches(eventFlags: flags, eventKeyCode: Int64(keyCode))
+
+        let shouldSwallowVerticalConstraint =
+            settings.verticalConstraintSetting.keyCode >= 0 &&
+            settings.verticalConstraintSetting.matches(eventFlags: flags, eventKeyCode: Int64(keyCode))
+
+        if shouldSwallowMove || shouldSwallowResize ||
+            shouldSwallowHorizontalConstraint || shouldSwallowVerticalConstraint {
             return nil
         }
 
@@ -299,6 +309,7 @@ class AccessibilityManager {
                     }
 
                     self.targetedElement = element
+                    self.startDragLocation = location
                     self.lastDragLocation = location
                     self.activeMode = isMoveActive ? .move : .resize
                     self.activeMouseButton = isMoveActive ? settings.moveSetting.mouseButton : settings.resizeSetting.mouseButton
@@ -337,6 +348,7 @@ class AccessibilityManager {
         // ドラッグ処理
         else if isMouseDragged(type) {
             if let element = targetedElement,
+               let startLocation = startDragLocation,
                var engine = interactionEngine {
                 
                 guard activeMode != .none, dragEventMatchesActiveButton(type) else {
@@ -344,10 +356,16 @@ class AccessibilityManager {
                 }
                 
                 let location = event.location
+                let constraint = activeAxisConstraint(
+                    settings: settings,
+                    flags: event.flags,
+                    location: location,
+                    startLocation: startLocation
+                )
                 var newFrame = engine.frame(
                     for: location,
                     timestamp: timestamp(of: event),
-                    constraint: .none
+                    constraint: constraint
                 )
                 interactionEngine = engine
                 lastDragLocation = location
@@ -382,6 +400,7 @@ class AccessibilityManager {
     
     private func endAction() {
         targetedElement = nil
+        startDragLocation = nil
         activeMode = .none
         activeMouseButton = nil
         activeResizeAnchorCorner = .topLeft
@@ -395,6 +414,35 @@ class AccessibilityManager {
 
     private func timestamp(of event: CGEvent) -> TimeInterval {
         TimeInterval(event.timestamp) / 1_000_000_000
+    }
+
+    private func activeAxisConstraint(
+        settings: SettingsModel,
+        flags: CGEventFlags,
+        location: CGPoint,
+        startLocation: CGPoint
+    ) -> DragAxisConstraint {
+        let horizontal = settings.horizontalConstraintSetting.isHeld(
+            eventFlags: flags,
+            pressedKeyCodes: pressedKeyCodes
+        )
+        let vertical = settings.verticalConstraintSetting.isHeld(
+            eventFlags: flags,
+            pressedKeyCodes: pressedKeyCodes
+        )
+
+        switch (horizontal, vertical) {
+        case (true, false):
+            return .horizontal
+        case (false, true):
+            return .vertical
+        case (true, true):
+            return abs(location.x - startLocation.x) >= abs(location.y - startLocation.y)
+                ? .horizontal
+                : .vertical
+        case (false, false):
+            return .none
+        }
     }
 
     private func scheduleWindowUpdate(
@@ -462,15 +510,23 @@ class AccessibilityManager {
             guard generation == self.interactionGeneration else { return }
             self.isCatchUpTickScheduled = false
             guard self.targetedElement != nil,
+                  let settings = self.settings,
+                  let startLocation = self.startDragLocation,
                   let location = self.lastDragLocation,
                   var engine = self.interactionEngine,
                   engine.needsCatchUp
             else { return }
 
+            let constraint = self.activeAxisConstraint(
+                settings: settings,
+                flags: CGEventSource.flagsState(.combinedSessionState),
+                location: location,
+                startLocation: startLocation
+            )
             var frame = engine.frame(
                 for: location,
                 timestamp: ProcessInfo.processInfo.systemUptime,
-                constraint: .none
+                constraint: constraint
             )
             self.interactionEngine = engine
             if self.activeMode == .resize {

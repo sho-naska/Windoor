@@ -156,6 +156,14 @@ class SettingsModel: ObservableObject {
         didSet { save(preserveWindowOrder, key: "preserveWindowOrder") }
     }
 
+    @Published var horizontalConstraintSetting: ShortcutSetting {
+        didSet { save(horizontalConstraintSetting, key: "horizontalConstraintSetting") }
+    }
+
+    @Published var verticalConstraintSetting: ShortcutSetting {
+        didSet { save(verticalConstraintSetting, key: "verticalConstraintSetting") }
+    }
+
     @Published var resizeAnchorPoint: ResizeAnchorPoint {
         didSet { save(resizeAnchorPoint, key: "resizeAnchorPoint") }
     }
@@ -238,6 +246,21 @@ class SettingsModel: ObservableObject {
         self.isResizeEnabled = storedResizeEnabled && loadedResize.hasKeyboardTrigger
         self.recordingTimeout = SettingsModel.loadDouble(key: "recordingTimeout") ?? 1.5
         self.preserveWindowOrder = SettingsModel.loadBool(key: "preserveWindowOrder") ?? false
+
+        let defaultAxisConstraint = ShortcutSetting(
+            keyCode: -1,
+            flags: NSEvent.ModifierFlags.shift.rawValue,
+            mouseButton: .left,
+            allowModifierOnly: true
+        )
+        self.horizontalConstraintSetting = SettingsModel.load(
+            key: "horizontalConstraintSetting",
+            type: ShortcutSetting.self
+        ) ?? defaultAxisConstraint
+        self.verticalConstraintSetting = SettingsModel.load(
+            key: "verticalConstraintSetting",
+            type: ShortcutSetting.self
+        ) ?? defaultAxisConstraint
         self.resizeAnchorPoint = SettingsModel.load(
             key: "resizeAnchorPoint",
             type: ResizeAnchorPoint.self
